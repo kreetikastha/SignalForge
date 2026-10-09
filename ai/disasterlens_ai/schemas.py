@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 from typing import Literal, Optional
 from pydantic import BaseModel, Field
@@ -8,6 +9,7 @@ class IncidentType(str, Enum):
     LANDSLIDE = "landslide"
     FIRE = "fire"
     EARTHQUAKE = "earthquake"
+    BUILDING_COLLAPSE = "building_collapse"
     ROAD_BLOCKAGE = "road_blockage"
     MEDICAL = "medical"
     OTHER = "other"
@@ -18,6 +20,8 @@ class ReportAnalysis(BaseModel):
     location_text: Optional[str] = None
     severity: int = Field(ge=1, le=5)
     people_affected: Optional[int] = None
+    people_trapped: Literal["yes", "no", "unknown"] = "unknown"
+    road_blocked: Literal["yes", "no", "unknown"] = "unknown"
     vulnerable_groups: list[str] = Field(default_factory=list)  # children, elderly, injured
     needs: list[str] = Field(default_factory=list)  # rescue, medical, food, shelter
     summary: str
@@ -31,6 +35,9 @@ class IncidentRef(BaseModel):
     incident_type: IncidentType
     location_text: Optional[str] = None
     summary: str = ""
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    received_at: Optional[datetime] = None
 
 
 class IncidentMatch(BaseModel):

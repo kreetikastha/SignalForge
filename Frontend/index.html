@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f5f2">
+  <title>DisasterLens | Incident intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark"><i data-lucide="scan-search"></i></div>
+        <div><div class="brand-name">DisasterLens</div><div class="brand-caption">Incident intelligence</div></div>
+      </div>
+      <div class="workspace-label">Operations</div>
+      <nav class="nav" aria-label="Main navigation">
+        <a class="nav-link active" href="#overview" data-view="overview" title="Overview"><i data-lucide="layout-dashboard"></i><span>Overview</span></a>
+        <a class="nav-link" href="#incidents" data-view="incidents" title="Incidents"><i data-lucide="triangle-alert"></i><span>Incidents</span><span class="nav-count" id="sidebarCount">00</span></a>
+        <a class="nav-link" href="#map" data-view="map" title="Live map"><i data-lucide="map"></i><span>Live map</span></a>
+        <a class="nav-link" href="#reports" title="Report intake" aria-label="Open report intake"><i data-lucide="inbox"></i><span>Report intake</span></a>
+      </nav>
+      <div class="side-bottom">
+        <div class="response-card" id="sidebarApiCard" data-state="loading">
+          <div class="response-title"><span>Incident API</span><span class="response-dot" id="sidebarApiDot"></span></div>
+          <p id="sidebarApiMessage">Checking backend availability.</p>
+          <a class="response-link" href="#incidents">View incident queue <i data-lucide="arrow-up-right"></i></a>
+        </div>
+        <div class="side-footer">
+          <div class="avatar"><i data-lucide="shield-check"></i></div>
+          <div><div class="user-name">Response workspace</div><div class="user-role">Incident operations</div></div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main" id="overview" data-view="overview">
+      <header class="topbar">
+        <div class="crumb">Operations <span aria-hidden="true">/</span> <strong id="breadcrumbTitle">Operational overview</strong></div>
+        <div class="top-actions">
+          <div class="live-pill" id="apiStatus" data-state="loading"><span class="live-dot"></span><span id="apiStatusText">Connecting to API</span></div>
+          <button class="icon-button" id="refreshButton" aria-label="Refresh incident data" title="Refresh"><i data-lucide="refresh-cw"></i></button>
+          <button class="icon-button" id="notificationsButton" aria-label="Notifications" title="Notifications"><i data-lucide="bell"></i></button>
+        </div>
+      </header>
+
+      <section class="page-heading">
+        <div>
+          <div class="eyebrow"><i data-lucide="radio"></i> Emergency operations</div>
+          <h1 id="viewTitle">Operational overview</h1>
+          <div class="heading-subtitle" id="viewSubtitle">Incoming incidents prioritized for responder review.</div>
+        </div>
+        <button class="primary-button" id="openReport"><i data-lucide="plus"></i> Add report</button>
+      </section>
+
+      <section class="metrics" aria-label="Incident summary">
+        <article class="metric metric--open"><div class="metric-icon"><i data-lucide="activity"></i></div><div><div class="metric-label">Open incidents</div><div class="metric-value" id="openCount">00</div></div><div class="metric-change">not resolved</div></article>
+        <article class="metric metric--urgent"><div class="metric-icon red"><i data-lucide="siren"></i></div><div><div class="metric-label">Urgent attention</div><div class="metric-value" id="urgentCount">00</div></div><div class="metric-change hot">priority queue</div></article>
+        <article class="metric metric--duplicates"><div class="metric-icon amber"><i data-lucide="copy-check"></i></div><div><div class="metric-label">Possible duplicates</div><div class="metric-value" id="duplicateCount">00</div></div><div class="metric-change">when available</div></article>
+        <article class="metric metric--received"><div class="metric-icon blue"><i data-lucide="messages-square"></i></div><div><div class="metric-label">Incidents loaded</div><div class="metric-value" id="reportCount">00</div></div><div class="metric-change">from API</div></article>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel map-panel" id="mapPanel">
+          <div class="panel-head">
+            <div><h2 class="panel-title">Incident map</h2><div class="panel-kicker" id="mapStatus">Waiting for incident locations</div></div>
+            <div class="map-tools"><select class="map-select" id="mapLayer" aria-label="Map display"><option value="reports">Report locations</option><option value="heat">Urgency view</option></select><button class="icon-button" id="locateButton" title="Fit all incidents" aria-label="Fit all incidents"><i data-lucide="scan"></i></button></div>
+          </div>
+          <div id="map" aria-label="Map showing incident locations"><div class="map-empty" id="mapEmpty"><span class="map-empty-icon"><i data-lucide="map-pin"></i></span><strong id="mapEmptyTitle">Waiting for incident locations</strong><span id="mapEmptyDescription">GPS coordinates from the API will appear here.</span><button class="map-empty-action" id="mapEmptyAction" data-map-action="report"><i data-lucide="plus"></i> Add report</button></div></div>
+          <div class="map-legend"><span class="legend-item"><span class="legend-dot"></span> Critical</span><span class="legend-item"><span class="legend-dot amber"></span> High</span><span class="legend-item"><span class="legend-dot green"></span> Medium</span><span class="legend-item"><span class="legend-dot low"></span> Low</span><span class="legend-item"><span class="legend-dot unknown"></span> Unknown</span><span class="legend-note">API coordinates</span></div>
+        </article>
+
+        <article class="panel queue-panel" id="incidents">
+          <div class="panel-head"><div class="queue-heading"><div><h2 class="panel-title">Priority queue</h2><div class="panel-kicker">Ranked by reported severity and received time</div></div><span class="queue-count" id="queueCount">00</span></div><button class="icon-button" id="sortButton" title="Sort incidents" aria-label="Sort incidents"><i data-lucide="arrow-down-wide-narrow"></i></button></div>
+          <div class="queue-controls" role="group" aria-label="Filter incidents">
+            <button class="filter-button active" data-filter="all">All</button><button class="filter-button" data-filter="urgent">Urgent</button><button class="filter-button" data-filter="duplicate">Duplicates</button>
+          </div>
+          <div class="incident-list" id="incidentList" aria-live="polite"></div>
+          <div class="queue-footer"><span><strong id="queueSource">API</strong> · incident feed</span><span id="queueDataStatus">Loading…</span></div>
+        </article>
+      </section>
+
+      <section class="detail-strip" aria-live="polite">
+        <div><div class="detail-label">Selected incident</div><div class="detail-main" id="detailTitle">Select an incident</div></div>
+        <div class="detail-description" id="detailDescription">Choose a report from the priority queue to review its location, urgency, and source summary.</div>
+        <div class="detail-actions"><button class="secondary-button" id="zoomButton"><i data-lucide="locate-fixed"></i> Locate</button><button class="secondary-button" id="copyCoordinatesButton" disabled><i data-lucide="copy"></i><span>Copy coordinates</span></button></div>
+      </section>
+      <div class="demo-note">Incident data is read from the local API · No emergency services are contacted</div>
+    </main>
+  </div>
+
+  <dialog id="reportDialog" aria-labelledby="dialogTitle">
+    <form id="reportForm">
+      <div class="dialog-head"><div><h2 id="dialogTitle">Submit a report</h2><p>Turn a community observation into structured incident intelligence.</p></div><button type="button" class="icon-button" id="closeDialog" aria-label="Close dialog"><i data-lucide="x"></i></button></div>
+      <div class="dialog-body">
+        <div class="field"><label for="reportText">What is happening?</label><textarea id="reportText" required minlength="5" maxlength="4500" placeholder="Describe what you saw, what is affected, and any immediate danger..."></textarea><div class="field-hint">Include landmarks or a street name to help responders locate the incident.</div></div>
+        <div class="field"><label for="reportLocation">Landmark or area (optional)</label><div class="location-entry"><input id="reportLocation" type="text" maxlength="250" placeholder="Street, landmark, or neighborhood"><button class="secondary-button location-button" type="button" id="useLocation"><i data-lucide="locate-fixed"></i><span id="locationButtonLabel">Use my location</span></button></div><div class="field-hint">The API requires latitude and longitude. Capture GPS or enter coordinates below.</div><div class="coordinate-entry"><div class="coordinate-field"><label for="reportLatitude">Latitude</label><input id="reportLatitude" type="number" step="any" min="-90" max="90" required placeholder="e.g. 27.7172"></div><div class="coordinate-field"><label for="reportLongitude">Longitude</label><input id="reportLongitude" type="number" step="any" min="-180" max="180" required placeholder="e.g. 85.3240"></div></div></div>
+        <div class="field"><label>Images</label><div class="unsupported-field"><i data-lucide="image-off"></i><span>Image upload isn’t supported by the current report API.</span></div></div>
+      </div>
+      <div class="dialog-foot"><span class="field-hint">AI analysis is preliminary. Verify urgent details before response.</span><div class="dialog-buttons"><button type="button" class="secondary-button" id="cancelDialog">Cancel</button><button class="primary-button" id="submitReportButton" type="submit"><i data-lucide="send"></i><span>Submit report</span></button></div></div>
+    </form>
+  </dialog>
+  <div class="toast" id="toast" role="status"><i data-lucide="circle-check"></i><span id="toastMessage">Report added to the priority queue.</span></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
