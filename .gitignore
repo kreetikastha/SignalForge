@@ -1,4 +1,8 @@
-.env
-__pycache__/
+﻿.env
+**pycache**/
 .venv/
 *.pyc
+backend/.venv/
+backend/**pycache**/
+backend/disasterlens.db
+.pytest_cache/
