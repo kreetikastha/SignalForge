@@ -128,6 +128,8 @@
     .legend-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
     .legend-dot.amber { background: #d79a36; }
     .legend-dot.green { background: #4c9b6a; }
+    .legend-dot.low { background: var(--blue); }
+    .legend-dot.unknown { background: #858d87; }
     .legend-note { margin-left: auto; color: #859088; }
     .queue-panel { display: flex; min-height: 0; flex-direction: column; }
     .queue-heading { display: flex; align-items: center; gap: 8px; }
@@ -147,6 +149,8 @@
     .severity.critical { background: var(--red-soft); color: var(--red); }
     .severity.high { background: var(--amber-soft); color: #a56b13; }
     .severity.medium { background: #edf3e9; color: #5a7b42; }
+    .severity.low { background: var(--blue-soft); color: var(--blue); }
+    .severity.unknown { background: #edf0ed; color: #68736c; }
     .incident-location { margin: 6px 0 0 22px; color: #606c64; font-size: 10px; }
     .incident-meta { display: flex; align-items: center; gap: 8px; margin: 7px 0 0 22px; color: #879189; font-size: 9px; }
     .duplicate-flag { color: #9b6b18; font-weight: 600; }
@@ -170,6 +174,8 @@
     .map-pin.critical { background: var(--red); }
     .map-pin.high { background: #d3912d; }
     .map-pin.medium { background: #5d9a70; }
+    .map-pin.low { background: var(--blue); }
+    .map-pin.unknown { background: #858d87; }
     .leaflet-popup-content-wrapper { border-radius: 5px; }
     .popup-title { font-weight: 700; font-size: 12px; }
     .popup-sub { color: #6c776f; font-size: 10px; margin-top: 4px; }
@@ -181,11 +187,16 @@
     .dialog-body { display: grid; gap: 14px; padding: 17px 20px; }
     .field { display: grid; gap: 6px; }
     .field label { font-size: 10px; font-weight: 700; color: #536057; }
-    .field textarea, .field input[type="text"] { width: 100%; border: 1px solid #dfe5df; border-radius: 4px; padding: 10px; background: #fff; outline: none; }
+    .field textarea, .field input[type="text"], .field input[type="number"] { width: 100%; border: 1px solid #dfe5df; border-radius: 4px; padding: 10px; background: #fff; outline: none; }
     .location-entry { display: flex; align-items: center; gap: 7px; }
     .location-entry input { min-width: 0; flex: 1; }
     .location-button { height: 37px; font-size: 10px; }
     .location-button i { width: 13px; height: 13px; }
+    .coordinate-entry { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+    .coordinate-field { display: grid; gap: 5px; }
+    .coordinate-field label { color: #69776f; font-size: 9px; }
+    .unsupported-field { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 9px 10px; border: 1px solid #e4e8e3; border-radius: 4px; color: #748078; font-size: 10px; }
+    .unsupported-field i { width: 15px; height: 15px; color: #839087; flex: 0 0 auto; }
     .field textarea { min-height: 98px; resize: vertical; line-height: 1.5; }
     .field textarea:focus, .field input:focus { border-color: #6d9a7c; box-shadow: 0 0 0 3px rgba(65,125,84,.1); }
     .field-hint { color: #8a948d; font-size: 9px; }

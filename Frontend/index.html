@@ -60,40 +60,40 @@
 
       <section class="intake-banner" aria-label="Report intake status">
         <div class="intake-copy">
-          <span class="intake-status"><span class="intake-status-dot"></span> READY FOR INTAKE</span>
-          <h2>Your response picture starts here.</h2>
-          <p>No reports have been submitted yet. Add a community observation to see triage and mapping in action.</p>
-          <button class="intake-action" data-open-report><i data-lucide="arrow-up-right"></i> Submit first report</button>
+          <span class="intake-status"><span class="intake-status-dot"></span> API-POWERED INTAKE</span>
+          <h2>Every report enters one response picture.</h2>
+          <p>Submit a community observation to the backend and follow its analysis status, severity, and coordinates here.</p>
+          <button class="intake-action" data-open-report><i data-lucide="arrow-up-right"></i> Submit a report</button>
         </div>
         <div class="workflow" aria-label="Local report workflow">
-          <div class="workflow-step"><span class="workflow-index">STEP 01</span><i data-lucide="messages-square"></i><strong>Community report</strong><small>Text and image</small></div>
+          <div class="workflow-step"><span class="workflow-index">STEP 01</span><i data-lucide="messages-square"></i><strong>Report intake</strong><small>POST /reports</small></div>
           <span class="workflow-connector"></span>
-          <div class="workflow-step"><span class="workflow-index">STEP 02</span><i data-lucide="scan-search"></i><strong>Local triage</strong><small>Demo analysis</small></div>
+          <div class="workflow-step"><span class="workflow-index">STEP 02</span><i data-lucide="scan-search"></i><strong>Mock analysis</strong><small>Backend keyword triage</small></div>
           <span class="workflow-connector"></span>
-          <div class="workflow-step"><span class="workflow-index">STEP 03</span><i data-lucide="map-pinned"></i><strong>Incident view</strong><small>Queue and map</small></div>
+          <div class="workflow-step"><span class="workflow-index">STEP 03</span><i data-lucide="map-pinned"></i><strong>Incident feed</strong><small>GET /incidents</small></div>
         </div>
         <div class="intake-watermark" aria-hidden="true">DL</div>
       </section>
 
       <section class="metrics" aria-label="Incident summary">
-        <article class="metric metric--open"><div class="metric-icon"><i data-lucide="activity"></i></div><div><div class="metric-label">Open incidents</div><div class="metric-value" id="openCount">00</div></div><div class="metric-change">currently reported</div></article>
+        <article class="metric metric--open"><div class="metric-icon"><i data-lucide="activity"></i></div><div><div class="metric-label">Open incidents</div><div class="metric-value" id="openCount">00</div></div><div class="metric-change">not resolved</div></article>
         <article class="metric metric--urgent"><div class="metric-icon red"><i data-lucide="siren"></i></div><div><div class="metric-label">Urgent attention</div><div class="metric-value" id="urgentCount">00</div></div><div class="metric-change hot">priority queue</div></article>
-        <article class="metric metric--duplicates"><div class="metric-icon amber"><i data-lucide="copy-check"></i></div><div><div class="metric-label">Possible duplicates</div><div class="metric-value" id="duplicateCount">00</div></div><div class="metric-change">review suggested</div></article>
+        <article class="metric metric--duplicates"><div class="metric-icon amber"><i data-lucide="copy-check"></i></div><div><div class="metric-label">Possible duplicates</div><div class="metric-value" id="duplicateCount">00</div></div><div class="metric-change">when available</div></article>
         <article class="metric metric--received"><div class="metric-icon blue"><i data-lucide="messages-square"></i></div><div><div class="metric-label">Incidents loaded</div><div class="metric-value" id="reportCount">00</div></div><div class="metric-change">from API</div></article>
       </section>
 
       <section class="content-grid">
         <article class="panel map-panel" id="mapPanel">
           <div class="panel-head">
-            <div><h2 class="panel-title">Incident map</h2><div class="panel-kicker" id="mapStatus">Greater Austin, Texas · Awaiting first report</div></div>
+            <div><h2 class="panel-title">Incident map</h2><div class="panel-kicker" id="mapStatus">Waiting for incident locations</div></div>
             <div class="map-tools"><select class="map-select" id="mapLayer" aria-label="Map display"><option value="reports">Report locations</option><option value="heat">Urgency view</option></select><button class="icon-button" id="locateButton" title="Fit all incidents" aria-label="Fit all incidents"><i data-lucide="scan"></i></button></div>
           </div>
-          <div id="map" aria-label="Map showing incident locations"><div class="map-empty" id="mapEmpty"><span class="map-empty-icon"><i data-lucide="map-pin"></i></span><strong id="mapEmptyTitle">Waiting for the first report</strong><span id="mapEmptyDescription">Incident markers will appear here after intake.</span><button class="map-empty-action" data-open-report>Add a report <i data-lucide="arrow-right"></i></button></div></div>
-          <div class="map-legend"><span class="legend-item"><span class="legend-dot"></span> Critical</span><span class="legend-item"><span class="legend-dot amber"></span> High</span><span class="legend-item"><span class="legend-dot green"></span> Medium</span><span class="legend-note">Markers represent reported incidents</span></div>
+          <div id="map" aria-label="Map showing incident locations"><div class="map-empty" id="mapEmpty"><span class="map-empty-icon"><i data-lucide="map-pin"></i></span><strong id="mapEmptyTitle">Waiting for incident locations</strong><span id="mapEmptyDescription">GPS coordinates from the API will appear here.</span><button class="map-empty-action" data-open-report>Add a report <i data-lucide="arrow-right"></i></button></div></div>
+          <div class="map-legend"><span class="legend-item"><span class="legend-dot"></span> Critical</span><span class="legend-item"><span class="legend-dot amber"></span> High</span><span class="legend-item"><span class="legend-dot green"></span> Medium</span><span class="legend-item"><span class="legend-dot low"></span> Low</span><span class="legend-item"><span class="legend-dot unknown"></span> Unknown</span><span class="legend-note">API coordinates</span></div>
         </article>
 
         <article class="panel queue-panel" id="incidents">
-          <div class="panel-head"><div class="queue-heading"><div><h2 class="panel-title">Priority queue</h2><div class="panel-kicker">Ranked by urgency and confidence</div></div><span class="queue-count" id="queueCount">00</span></div><button class="icon-button" id="sortButton" title="Sort by urgency" aria-label="Sort by urgency"><i data-lucide="arrow-down-wide-narrow"></i></button></div>
+          <div class="panel-head"><div class="queue-heading"><div><h2 class="panel-title">Priority queue</h2><div class="panel-kicker">Ranked by reported severity and received time</div></div><span class="queue-count" id="queueCount">00</span></div><button class="icon-button" id="sortButton" title="Sort incidents" aria-label="Sort incidents"><i data-lucide="arrow-down-wide-narrow"></i></button></div>
           <div class="queue-controls" role="group" aria-label="Filter incidents">
             <button class="filter-button active" data-filter="all">All</button><button class="filter-button" data-filter="urgent">Urgent</button><button class="filter-button" data-filter="duplicate">Duplicates</button>
           </div>
@@ -105,7 +105,7 @@
       <section class="detail-strip" aria-live="polite">
         <div><div class="detail-label">Selected incident</div><div class="detail-main" id="detailTitle">Select an incident</div></div>
         <div class="detail-description" id="detailDescription">Choose a report from the priority queue to review its location, urgency, and source summary.</div>
-        <div class="detail-actions"><button class="secondary-button" id="zoomButton"><i data-lucide="locate-fixed"></i> Locate</button><button class="secondary-button" id="resolveButton"><i data-lucide="check"></i><span>Acknowledge</span></button></div>
+        <div class="detail-actions"><button class="secondary-button" id="zoomButton"><i data-lucide="locate-fixed"></i> Locate</button><button class="secondary-button" id="copyCoordinatesButton" disabled><i data-lucide="copy"></i><span>Copy coordinates</span></button></div>
       </section>
       <div class="demo-note">Incident data is read from the local API · No emergency services are contacted</div>
     </main>
@@ -115,11 +115,11 @@
     <form id="reportForm">
       <div class="dialog-head"><div><h2 id="dialogTitle">Submit a report</h2><p>Turn a community observation into structured incident intelligence.</p></div><button type="button" class="icon-button" id="closeDialog" aria-label="Close dialog"><i data-lucide="x"></i></button></div>
       <div class="dialog-body">
-        <div class="field"><label for="reportText">What is happening?</label><textarea id="reportText" required placeholder="Describe what you saw, what is affected, and any immediate danger..."></textarea><div class="field-hint">Include landmarks or a street name to help responders locate the incident.</div></div>
-        <div class="field"><label for="reportLocation">Location</label><div class="location-entry"><input id="reportLocation" type="text" required placeholder="Street, landmark, or neighborhood"><button class="secondary-button location-button" type="button" id="useLocation"><i data-lucide="locate-fixed"></i><span id="locationButtonLabel">Use my location</span></button></div><div class="field-hint">Use GPS for a precise map pin. Typed locations are not geocoded in this frontend demo.</div></div>
-        <div class="field"><label>Photo or image (optional)</label><label class="upload-zone"><i data-lucide="image-plus"></i><span class="upload-copy"><strong id="uploadName">Attach an image</strong><span>JPG, PNG, or WEBP · up to 10 MB</span></span><input type="file" id="reportImage" accept="image/png,image/jpeg,image/webp"></label></div>
+        <div class="field"><label for="reportText">What is happening?</label><textarea id="reportText" required minlength="5" maxlength="4500" placeholder="Describe what you saw, what is affected, and any immediate danger..."></textarea><div class="field-hint">Include landmarks or a street name to help responders locate the incident.</div></div>
+        <div class="field"><label for="reportLocation">Landmark or area (optional)</label><div class="location-entry"><input id="reportLocation" type="text" maxlength="250" placeholder="Street, landmark, or neighborhood"><button class="secondary-button location-button" type="button" id="useLocation"><i data-lucide="locate-fixed"></i><span id="locationButtonLabel">Use my location</span></button></div><div class="field-hint">The API requires latitude and longitude. Capture GPS or enter coordinates below.</div><div class="coordinate-entry"><div class="coordinate-field"><label for="reportLatitude">Latitude</label><input id="reportLatitude" type="number" step="any" min="-90" max="90" required placeholder="e.g. 27.7172"></div><div class="coordinate-field"><label for="reportLongitude">Longitude</label><input id="reportLongitude" type="number" step="any" min="-180" max="180" required placeholder="e.g. 85.3240"></div></div></div>
+        <div class="field"><label>Images</label><div class="unsupported-field"><i data-lucide="image-off"></i><span>Image upload isn’t supported by the current report API.</span></div></div>
       </div>
-      <div class="dialog-foot"><span class="field-hint">Local demo triage · not connected to Gemma 4</span><div class="dialog-buttons"><button type="button" class="secondary-button" id="cancelDialog">Cancel</button><button class="primary-button" type="submit"><i data-lucide="sparkles"></i> Analyze report</button></div></div>
+      <div class="dialog-foot"><span class="field-hint">Analysis currently uses the backend keyword mock.</span><div class="dialog-buttons"><button type="button" class="secondary-button" id="cancelDialog">Cancel</button><button class="primary-button" id="submitReportButton" type="submit"><i data-lucide="send"></i><span>Submit report</span></button></div></div>
     </form>
   </dialog>
   <div class="toast" id="toast" role="status"><i data-lucide="circle-check"></i><span id="toastMessage">Report added to the priority queue.</span></div>

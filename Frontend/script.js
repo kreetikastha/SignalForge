@@ -1,8 +1,7 @@
     const apiBaseUrl = 'http://127.0.0.1:8001';
     let reports = [];
     let loadingIncidents = true;
-    let capturedCoordinates = null;
-    const map = L.map('map', { zoomControl: false, scrollWheelZoom: false }).setView([30.2714, -97.7437], 12);
+    const map = L.map('map', { zoomControl: false, scrollWheelZoom: false }).setView([20, 0], 2);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     const markerLayer = L.layerGroup().addTo(map);
@@ -11,22 +10,23 @@
     let activeFilter = 'all';
     let urgencyFirst = true;
     let heatLayer = null;
-    const severityRank = { critical: 3, high: 2, medium: 1 };
-    const iconFor = (type) => ({ 'Flooding': 'waves', 'Flash flooding': 'waves', 'Structure fire': 'flame', 'Road obstruction': 'construction', 'Medical emergency': 'heart-pulse', 'Power outage': 'zap', 'Water rescue': 'life-buoy' }[type] || 'triangle-alert');
-    const urgencyClass = (value) => value === 'critical' ? 'critical' : value === 'high' ? 'high' : 'medium';
+    const severityRank = { critical: 4, high: 3, medium: 2, low: 1, unknown: 0 };
+    const iconFor = (type) => ({ flood: 'waves', landslide: 'mountain', fire: 'flame', earthquake: 'activity', road_blockage: 'construction', medical: 'heart-pulse', other: 'triangle-alert' }[String(type).toLowerCase().replace(/[\s-]+/g, '_')] || 'triangle-alert');
+    const urgencyClass = (value) => ['critical', 'high', 'medium', 'low'].includes(value) ? value : 'unknown';
     const hasCoordinates = (report) => Number.isFinite(report.lat) && Number.isFinite(report.lng);
-    const markerIcon = (report) => L.divIcon({ className: '', html: `<div class="map-pin ${urgencyClass(report.severity)}"><span>${report.severity === 'critical' ? '!' : report.severity === 'high' ? 'H' : 'M'}</span></div>`, iconSize: [28, 34], iconAnchor: [14, 30], popupAnchor: [0, -28] });
+    const markerIcon = (report) => L.divIcon({ className: '', html: `<div class="map-pin ${urgencyClass(report.severity)}"><span>${({ critical: '!', high: 'H', medium: 'M', low: 'L', unknown: '?' })[urgencyClass(report.severity)]}</span></div>`, iconSize: [28, 34], iconAnchor: [14, 30], popupAnchor: [0, -28] });
 
     function sortedReports() {
       return [...reports].sort((left, right) => {
         const urgency = severityRank[right.severity] - severityRank[left.severity];
-        return urgencyFirst ? urgency || left.time.localeCompare(right.time) : left.time.localeCompare(right.time);
+        const timeOrder = (right.receivedAt ?? 0) - (left.receivedAt ?? 0);
+        return urgencyFirst ? urgency || timeOrder : timeOrder;
       });
     }
     function visibleReports() {
       const ordered = sortedReports();
-      if (activeFilter === 'urgent') return ordered.filter((report) => report.severity === 'critical' || report.severity === 'high');
-      if (activeFilter === 'duplicate') return ordered.filter((report) => report.duplicate);
+      if (activeFilter === 'urgent') return ordered.filter((report) => ['critical', 'high'].includes(report.severity));
+      if (activeFilter === 'duplicate') return ordered.filter((report) => report.duplicate === true);
       return ordered;
     }
     function renderMarkers() {
@@ -34,8 +34,8 @@
       const mapEmpty = document.getElementById('mapEmpty');
       mapEmpty.hidden = mappedReports.length > 0;
       const apiFailed = document.getElementById('apiStatus').dataset.state === 'error';
-      document.getElementById('mapEmptyTitle').textContent = apiFailed ? 'API unavailable' : reports.length ? 'No GPS pins yet' : 'Waiting for the first report';
-      document.getElementById('mapEmptyDescription').textContent = apiFailed ? 'Refresh to retry loading incident locations.' : reports.length ? 'This response contains no GPS coordinates.' : 'Incident markers will appear here after intake.';
+      document.getElementById('mapEmptyTitle').textContent = apiFailed ? 'API unavailable' : reports.length ? 'No coordinates returned' : 'Waiting for incident locations';
+      document.getElementById('mapEmptyDescription').textContent = apiFailed ? 'Refresh to retry loading incident locations.' : reports.length ? 'The API response has no usable latitude and longitude.' : 'GPS coordinates from the API will appear here.';
       markerLayer.clearLayers();
       markerById.clear();
       mappedReports.forEach((report) => {
@@ -49,39 +49,46 @@
     function renderQueue() {
       const list = document.getElementById('incidentList');
       const shown = visibleReports();
-      list.innerHTML = shown.length ? shown.map((report) => `<button class="incident-row ${report.id === selectedId ? 'selected' : ''}" data-id="${escapeHtml(report.id)}" aria-label="${escapeHtml(report.type)}, ${escapeHtml(report.severity)} priority, ${escapeHtml(report.location)}"><div class="incident-topline"><span class="incident-type"><i data-lucide="${iconFor(report.type)}"></i>${escapeHtml(report.type)}</span><span class="severity ${urgencyClass(report.severity)}">${escapeHtml(report.severity)}</span></div><div class="incident-location">${escapeHtml(report.title)} · ${escapeHtml(report.location)}</div><div class="incident-meta"><span>${escapeHtml(report.time)}</span><span>·</span><span>${escapeHtml(report.source)}</span><span>·</span><span>${report.confidence}% confidence</span>${report.duplicate ? '<span class="duplicate-flag">· Possible duplicate</span>' : ''}${report.acknowledged ? '<span class="acknowledged-flag">· Acknowledged</span>' : ''}</div></button>`).join('') : loadingIncidents ? '<div class="empty-state"><strong>Loading incidents</strong><span>Connecting to the local incident API.</span></div>' : reports.length ? '<div class="empty-state"><strong>No matching incidents</strong><span>Try another priority filter.</span></div>' : '<div class="empty-state"><span class="empty-state-icon"><i data-lucide="inbox"></i></span><strong>No incidents returned</strong><span>Submitted incidents will appear here when available from the API.</span></div>';
+      list.innerHTML = shown.length ? shown.map((report) => {
+        const meta = [report.time, report.analysisStatus ? `Analysis: ${report.analysisStatus}` : null, report.confidence === null ? null : `${report.confidence}% confidence`, report.duplicate === true ? 'Possible duplicate' : null].filter(Boolean);
+        return `<button class="incident-row ${report.id === selectedId ? 'selected' : ''}" data-id="${escapeHtml(report.id)}" aria-label="${escapeHtml(report.type)}, ${escapeHtml(report.severity)} severity, ${escapeHtml(report.location)}"><div class="incident-topline"><span class="incident-type"><i data-lucide="${iconFor(report.type)}"></i>${escapeHtml(report.type)}</span><span class="severity ${urgencyClass(report.severity)}">${escapeHtml(report.severity)}</span></div><div class="incident-location">${escapeHtml(report.title)} · ${escapeHtml(report.location)}</div><div class="incident-meta">${meta.map((item) => `<span>${escapeHtml(item)}</span>`).join('<span aria-hidden="true">·</span>')}</div></button>`;
+      }).join('') : loadingIncidents ? '<div class="empty-state"><strong>Loading incidents</strong><span>Connecting to the local incident API.</span></div>' : reports.length ? '<div class="empty-state"><strong>No matching incidents</strong><span>Try another priority filter.</span></div>' : '<div class="empty-state"><span class="empty-state-icon"><i data-lucide="inbox"></i></span><strong>No incidents returned</strong><span>Submitted incidents will appear here when available from the API.</span></div>';
       list.querySelectorAll('.incident-row').forEach((row) => row.addEventListener('click', () => selectIncident(row.dataset.id, true)));
       if (window.lucide) lucide.createIcons();
       updateCounts();
     }
     function updateCounts() {
-      const urgent = reports.filter((report) => report.severity === 'critical' || report.severity === 'high').length;
-      const duplicates = reports.filter((report) => report.duplicate).length;
-      document.getElementById('openCount').textContent = String(reports.length).padStart(2, '0');
+      const urgent = reports.filter((report) => ['critical', 'high'].includes(report.severity)).length;
+      const open = reports.filter((report) => !['resolved', 'closed'].includes(report.status)).length;
+      const duplicateAvailability = reports.some((report) => report.duplicate !== null);
+      const allDuplicateDataAvailable = reports.every((report) => report.duplicate !== null);
+      const duplicates = reports.filter((report) => report.duplicate === true).length;
+      document.getElementById('openCount').textContent = String(open).padStart(2, '0');
       document.getElementById('urgentCount').textContent = String(urgent).padStart(2, '0');
-      document.getElementById('duplicateCount').textContent = String(duplicates).padStart(2, '0');
+      document.getElementById('duplicateCount').textContent = reports.length && !allDuplicateDataAvailable ? '—' : String(duplicates).padStart(2, '0');
       document.getElementById('queueCount').textContent = String(reports.length).padStart(2, '0');
       document.getElementById('sidebarCount').textContent = String(reports.length).padStart(2, '0');
       document.getElementById('reportCount').textContent = String(reports.length).padStart(2, '0');
       const mappedCount = reports.filter(hasCoordinates).length;
-      document.getElementById('mapStatus').textContent = mappedCount ? `${mappedCount} GPS location${mappedCount === 1 ? '' : 's'} · Greater Austin` : reports.length ? 'Reports awaiting GPS locations' : 'Greater Austin, Texas · Awaiting first report';
+      document.getElementById('mapStatus').textContent = mappedCount ? `${mappedCount} of ${reports.length} incidents have coordinates` : reports.length ? 'No coordinates in the incident feed' : 'Waiting for incident locations';
       document.getElementById('queueDataStatus').textContent = loadingIncidents ? 'Loading…' : `${reports.length} incident${reports.length === 1 ? '' : 's'}`;
       const hasReports = reports.length > 0;
       document.getElementById('sortButton').disabled = !hasReports;
       ['locateButton', 'mapLayer'].forEach((id) => { document.getElementById(id).disabled = !mappedCount; });
+      document.querySelector('[data-filter="duplicate"]').disabled = !duplicateAvailability;
       const hasSelection = reports.some((report) => report.id === selectedId);
       document.getElementById('zoomButton').disabled = !hasSelection;
-      document.getElementById('resolveButton').disabled = !hasSelection;
+      document.getElementById('copyCoordinatesButton').disabled = !hasSelection || !hasCoordinates(reports.find((report) => report.id === selectedId));
     }
     function selectIncident(id, pan) {
       const report = reports.find((item) => item.id === id);
       if (!report) return;
       selectedId = id;
       document.getElementById('detailTitle').textContent = `${report.type} · ${report.id}`;
-      document.getElementById('detailDescription').textContent = `${report.description} ${report.confidence}% extraction confidence.`;
-      const acknowledgeButton = document.getElementById('resolveButton');
-      acknowledgeButton.classList.toggle('acknowledged', Boolean(report.acknowledged));
-      acknowledgeButton.querySelector('span').textContent = report.acknowledged ? 'Reopen' : 'Acknowledge';
+      const details = [report.description, report.priorityReason, `Analysis: ${report.analysisStatus}`, `Status: ${report.status}`];
+      if (report.peopleTrapped !== 'unknown') details.push(`People trapped: ${report.peopleTrapped}`);
+      if (report.roadBlocked !== 'unknown') details.push(`Road blocked: ${report.roadBlocked}`);
+      document.getElementById('detailDescription').textContent = details.filter(Boolean).join(' · ');
       renderQueue();
       if (pan && hasCoordinates(report)) {
         map.flyTo([report.lat, report.lng], Math.max(map.getZoom(), 14), { duration: .45 });
@@ -92,7 +99,8 @@
       if (heatLayer) map.removeLayer(heatLayer);
       const mappedReports = reports.filter(hasCoordinates);
       if (document.getElementById('mapLayer').value !== 'heat' || !L.circle || !mappedReports.length) return;
-      heatLayer = L.layerGroup(mappedReports.map((report) => L.circle([report.lat, report.lng], { radius: report.severity === 'critical' ? 480 : report.severity === 'high' ? 350 : 220, color: report.severity === 'critical' ? '#c84a3d' : report.severity === 'high' ? '#bd791c' : '#4c9b6a', fillColor: report.severity === 'critical' ? '#c84a3d' : report.severity === 'high' ? '#bd791c' : '#4c9b6a', fillOpacity: .13, weight: 1, opacity: .35 }))).addTo(map);
+      const severityColors = { critical: '#c84a3d', high: '#bd791c', medium: '#4c9b6a', low: '#477895', unknown: '#7b837d' };
+      heatLayer = L.layerGroup(mappedReports.map((report) => L.circle([report.lat, report.lng], { radius: report.severity === 'critical' ? 480 : report.severity === 'high' ? 350 : report.severity === 'medium' ? 220 : 140, color: severityColors[report.severity], fillColor: severityColors[report.severity], fillOpacity: .13, weight: 1, opacity: .35 }))).addTo(map);
       markerLayer.bringToFront();
     }
     function escapeHtml(value) {
@@ -106,26 +114,46 @@
         const longitudeValue = item.longitude ?? item.lng ?? item.lon;
         const latitude = latitudeValue === null || latitudeValue === undefined || latitudeValue === '' ? null : Number(latitudeValue);
         const longitude = longitudeValue === null || longitudeValue === undefined || longitudeValue === '' ? null : Number(longitudeValue);
-        const rawSeverity = String(item.severity ?? item.urgency ?? item.priority ?? 'medium').toLowerCase();
-        const severity = ['critical', 'urgent', 'emergency'].includes(rawSeverity) ? 'critical' : ['high', 'major'].includes(rawSeverity) ? 'high' : 'medium';
-        const description = String(item.description ?? item.summary ?? item.details ?? item.title ?? 'Incident details unavailable.');
-        const type = String(item.type ?? item.incident_type ?? item.category ?? 'Community report');
-        const location = String(item.location ?? item.address ?? item.place_name ?? (Number.isFinite(latitude) && Number.isFinite(longitude) ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}` : 'Location awaiting verification'));
-        const confidenceValue = Number(item.confidence ?? item.confidence_score ?? 0);
+        const rawSeverity = item.severity ?? item.urgency ?? item.priority;
+        const severityNumber = Number(rawSeverity);
+        const severityText = String(rawSeverity ?? 'unknown').toLowerCase();
+        const severity = Number.isFinite(severityNumber) && rawSeverity !== null && rawSeverity !== ''
+          ? severityNumber >= 5 ? 'critical' : severityNumber >= 4 ? 'high' : severityNumber >= 3 ? 'medium' : severityNumber >= 1 ? 'low' : 'unknown'
+          : ['critical', 'urgent', 'emergency'].includes(severityText) ? 'critical'
+            : ['high', 'major'].includes(severityText) ? 'high'
+              : ['medium', 'moderate'].includes(severityText) ? 'medium'
+                : ['low', 'minor'].includes(severityText) ? 'low' : 'unknown';
+        const rawDescription = item.description ?? item.summary ?? item.ai_summary ?? item.details ?? item.title;
+        const description = typeof rawDescription === 'string' && rawDescription.trim() ? rawDescription : 'Incident details unavailable.';
+        const rawType = String(item.incident_type ?? item.type ?? item.category ?? 'unknown');
+        const type = rawType.replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+        const locationValue = item.location ?? item.location_text ?? item.address ?? item.place_name;
+        const location = String(locationValue ?? (Number.isFinite(latitude) && Number.isFinite(longitude) ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}` : 'Location unavailable'));
+        const confidenceSource = item.confidence ?? item.confidence_score;
+        const confidenceValue = confidenceSource === undefined || confidenceSource === null ? null : Number(confidenceSource);
+        const receivedAt = Date.parse(item.received_at ?? item.created_at ?? item.reported_at ?? item.timestamp ?? '');
+        const ageMinutes = Number.isFinite(receivedAt) ? Math.max(0, Math.floor((Date.now() - receivedAt) / 60000)) : null;
+        const time = ageMinutes === null ? 'time unavailable' : ageMinutes < 1 ? 'just now' : ageMinutes < 60 ? `${ageMinutes} min ago` : ageMinutes < 1440 ? `${Math.floor(ageMinutes / 60)} hr ago` : new Date(receivedAt).toLocaleDateString();
         return {
-          id: String(item.id ?? item.incident_id ?? item.report_id ?? `API-${index + 1}`),
+          id: String(item.incident_id ?? item.id ?? item.report_id ?? `API-${index + 1}`),
           type,
-          title: String(item.title ?? item.summary ?? description.split(/[.!?\n]/)[0].slice(0, 68)),
+          title: String(item.summary ?? item.ai_summary ?? item.title ?? description.split(/[.!?\n]/)[0].slice(0, 68) ?? 'Incident report'),
           location,
           lat: Number.isFinite(latitude) ? latitude : null,
           lng: Number.isFinite(longitude) ? longitude : null,
           severity,
-          time: String(item.time_ago ?? item.created_at ?? item.reported_at ?? item.timestamp ?? 'time unavailable'),
-          source: String(item.source ?? item.channel ?? 'API report'),
-          confidence: confidenceValue <= 1 && confidenceValue > 0 ? Math.round(confidenceValue * 100) : Math.round(confidenceValue),
-          duplicate: Boolean(item.duplicate ?? item.is_duplicate ?? false),
-          acknowledged: Boolean(item.acknowledged ?? false),
-          description
+          time,
+          receivedAt: Number.isFinite(receivedAt) ? receivedAt : 0,
+          confidence: confidenceValue === null || !Number.isFinite(confidenceValue) ? null : confidenceValue <= 1 ? Math.round(confidenceValue * 100) : Math.round(confidenceValue),
+          duplicate: item.duplicate === undefined && item.is_duplicate === undefined ? null : Boolean(item.duplicate ?? item.is_duplicate),
+          analysisStatus: String(item.analysis_status ?? 'unknown'),
+          status: String(item.status ?? 'new').toLowerCase(),
+          priorityReason: item.priority_reason ?? null,
+          peopleTrapped: item.people_trapped ?? 'unknown',
+          roadBlocked: item.road_blocked ?? 'unknown',
+          supportingReports: Number(item.supporting_reports ?? 1),
+          description,
+          source: item.source ?? null
         };
       });
     }
@@ -135,7 +163,7 @@
       document.getElementById('apiStatusText').textContent = message;
       document.getElementById('queueSource').textContent = state === 'connected' ? 'API' : state === 'loading' ? 'Connecting' : 'API unavailable';
     }
-    async function loadIncidents() {
+    async function loadIncidents(notifyOnError = true) {
       loadingIncidents = true;
       setApiStatus('loading', 'Connecting to API');
       renderQueue();
@@ -162,31 +190,8 @@
         document.getElementById('queueSource').textContent = 'API error';
         renderMarkers();
         renderQueue();
-        notify(`Could not load incidents: ${error.message}. Check that the API is running and allows this page origin (CORS).`);
+        if (notifyOnError) notify(`Could not load incidents: ${error.message}. Check that the API is running and allows this page origin (CORS).`);
       }
-    }
-    function inferIncident(text) {
-      const normalized = text.toLowerCase();
-      const categories = [
-        { type: 'Structure fire', words: ['fire', 'smoke', 'burning', 'flame'] },
-        { type: 'Flooding', words: ['flood', 'water rising', 'underwater', 'stranded in water'] },
-        { type: 'Road obstruction', words: ['tree', 'blocked', 'debris', 'road', 'blocked road'] },
-        { type: 'Medical emergency', words: ['injured', 'injury', 'hurt', 'medical', 'unconscious', 'trapped'] },
-        { type: 'Power outage', words: ['power', 'electricity', 'outage', 'downed line'] },
-        { type: 'Water rescue', words: ['rescue', 'stranded', 'creek', 'river'] }
-      ];
-      const category = categories.find((item) => item.words.some((word) => normalized.includes(word)));
-      const type = category?.type || 'Community report';
-      const criticalWords = ['trapped', 'injured', 'injury', 'unconscious', 'fire', 'rescue', 'stranded', 'life threatening'];
-      const highWords = ['flood', 'water rising', 'blocked', 'smoke', 'tree', 'debris', 'urgent', 'danger'];
-      const severity = criticalWords.some((word) => normalized.includes(word)) ? 'critical' : highWords.some((word) => normalized.includes(word)) ? 'high' : 'medium';
-      const tokens = normalized.match(/[a-z]{4,}/g) || [];
-      const isDuplicate = reports.some((report) => {
-        const prior = `${report.type} ${report.title} ${report.description}`.toLowerCase().match(/[a-z]{4,}/g) || [];
-        const overlap = tokens.filter((token) => prior.includes(token)).length;
-        return overlap >= 3 && tokens.length > 0 && overlap / tokens.length >= .25;
-      });
-      return { type, severity, isDuplicate };
     }
     function notify(message) {
       const toast = document.getElementById('toast');
@@ -194,31 +199,6 @@
       toast.classList.add('show');
       window.setTimeout(() => toast.classList.remove('show'), 2800);
     }
-    function addReport(text, location, imageName, coordinates) {
-      const inferred = inferIncident(text);
-      const report = {
-        id: `DL-${Math.floor(2500 + Math.random() * 400)}`,
-        type: inferred.type,
-        title: text.trim().split(/[.!?\n]/)[0].slice(0, 68) || 'New community report',
-        location: location.trim() || 'Location awaiting verification',
-        lat: coordinates?.latitude ?? null,
-        lng: coordinates?.longitude ?? null,
-        severity: inferred.severity,
-        time: 'just now',
-        source: imageName ? 'Image + text' : 'Citizen text',
-        confidence: imageName ? 76 : 82,
-        duplicate: inferred.isDuplicate,
-        description: `${text.trim()}${imageName ? ` Attached image: ${imageName}.` : ''} Demo extraction only; verify details with responders.`
-      };
-      reports.unshift(report);
-      selectedId = report.id;
-      renderMarkers();
-      renderQueue();
-      selectIncident(report.id, Boolean(coordinates));
-      document.getElementById('reportCount').textContent = String(reports.length).padStart(2, '0');
-      notify(inferred.isDuplicate ? 'Report added. A possible duplicate was flagged for review.' : coordinates ? 'Report added with its GPS location.' : 'Report added without a GPS pin.');
-    }
-
     document.querySelectorAll('.filter-button').forEach((button) => button.addEventListener('click', () => {
       activeFilter = button.dataset.filter;
       document.querySelectorAll('.filter-button').forEach((item) => item.classList.toggle('active', item === button));
@@ -230,12 +210,16 @@
       if (bounds.isValid()) map.fitBounds(bounds.pad(.15), { maxZoom: 13 });
     });
     document.getElementById('zoomButton').addEventListener('click', () => selectIncident(selectedId, true));
-    document.getElementById('resolveButton').addEventListener('click', () => {
+    document.getElementById('copyCoordinatesButton').addEventListener('click', async () => {
       const report = reports.find((item) => item.id === selectedId);
-      if (!report) return;
-      report.acknowledged = !report.acknowledged;
-      selectIncident(report.id, false);
-      notify(report.acknowledged ? 'Incident acknowledged.' : 'Incident reopened.');
+      if (!report || !hasCoordinates(report)) return;
+      const coordinates = `${report.lat}, ${report.lng}`;
+      try {
+        await navigator.clipboard.writeText(coordinates);
+        notify('Incident coordinates copied.');
+      } catch {
+        notify(coordinates);
+      }
     });
     document.getElementById('mapLayer').addEventListener('change', refreshHeatLayer);
     document.getElementById('refreshButton').addEventListener('click', loadIncidents);
@@ -249,12 +233,9 @@
     });
     document.getElementById('closeDialog').addEventListener('click', () => document.getElementById('reportDialog').close());
     document.getElementById('cancelDialog').addEventListener('click', () => document.getElementById('reportDialog').close());
-    document.getElementById('reportImage').addEventListener('change', (event) => {
-      const file = event.target.files[0];
-      document.getElementById('uploadName').textContent = file ? file.name : 'Attach an image';
-    });
     const locationInput = document.getElementById('reportLocation');
-    locationInput.addEventListener('input', () => { capturedCoordinates = null; });
+    const latitudeInput = document.getElementById('reportLatitude');
+    const longitudeInput = document.getElementById('reportLongitude');
     document.getElementById('useLocation').addEventListener('click', () => {
       const button = document.getElementById('useLocation');
       const label = document.getElementById('locationButtonLabel');
@@ -265,10 +246,10 @@
       button.disabled = true;
       label.textContent = 'Finding location…';
       navigator.geolocation.getCurrentPosition(({ coords }) => {
-        capturedCoordinates = { latitude: coords.latitude, longitude: coords.longitude };
-        locationInput.value = `GPS: ${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
+        latitudeInput.value = coords.latitude;
+        longitudeInput.value = coords.longitude;
         button.disabled = false;
-        label.textContent = 'Use my location';
+        label.textContent = 'GPS captured';
         notify('Phone location captured. Submit the report to place its map pin.');
       }, (error) => {
         const message = error.code === error.PERMISSION_DENIED
@@ -281,17 +262,44 @@
         notify(message);
       }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 });
     });
-    document.getElementById('reportForm').addEventListener('submit', (event) => {
+    document.getElementById('reportForm').addEventListener('submit', async (event) => {
       event.preventDefault();
       const text = document.getElementById('reportText').value;
-      const location = document.getElementById('reportLocation').value;
-      const image = document.getElementById('reportImage').files[0];
-      if (image && image.size > 10 * 1024 * 1024) { notify('Image exceeds the 10 MB demo limit.'); return; }
-      addReport(text, location, image?.name || '', capturedCoordinates);
-      capturedCoordinates = null;
-      event.currentTarget.reset();
-      document.getElementById('uploadName').textContent = 'Attach an image';
-      document.getElementById('reportDialog').close();
+      const latitude = Number(latitudeInput.value);
+      const longitude = Number(longitudeInput.value);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        notify('Enter valid latitude and longitude coordinates.');
+        return;
+      }
+      const submitButton = document.getElementById('submitReportButton');
+      submitButton.disabled = true;
+      submitButton.querySelector('span').textContent = 'Submitting…';
+      try {
+        const response = await fetch(`${apiBaseUrl}/reports`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({
+            description: locationInput.value.trim() ? `${text.trim()}\n\nReported location: ${locationInput.value.trim()}` : text.trim(),
+            latitude,
+            longitude
+          })
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => null);
+          const detail = Array.isArray(error?.detail) ? error.detail.map((item) => item.msg).join('; ') : error?.detail;
+          throw new Error(detail || `API returned HTTP ${response.status}`);
+        }
+        event.currentTarget.reset();
+        document.getElementById('locationButtonLabel').textContent = 'Use my location';
+        document.getElementById('reportDialog').close();
+        notify('Report submitted to the backend. Refreshing incidents…');
+        await loadIncidents(false);
+      } catch (error) {
+        notify(`Could not submit report: ${error.message}. Check API availability and CORS.`);
+      } finally {
+        submitButton.disabled = false;
+        submitButton.querySelector('span').textContent = 'Submit report';
+      }
     });
     function activateNavLink(activeLink) {
       document.querySelectorAll('.nav-link').forEach((link) => {
@@ -303,8 +311,8 @@
     }
     const viewContent = {
       overview: ['Situation overview', 'Community reports, organized by location and urgency.'],
-      incidents: ['Incident queue', 'Review reports prioritized by urgency and confidence.'],
-      map: ['Live incident map', 'Explore reported locations across Greater Austin.']
+      incidents: ['Incident queue', 'Review reports prioritized by reported severity and received time.'],
+      map: ['Live incident map', 'Explore locations returned by the incident feed.']
     };
     document.querySelectorAll('.nav-link[data-view]').forEach((link) => link.addEventListener('click', (event) => {
       event.preventDefault();
