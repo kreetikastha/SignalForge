@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import time
 import unicodedata
@@ -9,7 +10,12 @@ from .client import chat
 from .safety import apply_safety_net
 from .schemas import IncidentType, ReportAnalysis
 
+log = logging.getLogger(__name__)
+
 _DEV_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
+
+# ASCII control characters we drop from model output; \t \n \r stay legal.
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
 def _normalize(text: str) -> str:
@@ -35,16 +41,45 @@ def _load_examples() -> list[dict]:
 
 
 def _extract_json(raw: str) -> dict:
-    raw = re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=re.MULTILINE).strip()
-    start, end = raw.find("{"), raw.rfind("}")
-    if start == -1 or end == -1:
+    """Pull the first JSON object out of noisy model output.
+
+    Tolerates markdown code fences, prose around the object, trailing commas
+    before a closing brace/bracket, and stray ASCII control characters.
+    Raises ValueError when no object is present or the body is not JSON.
+    """
+    text = (raw or "").strip()
+    text = re.sub(r"^```(?:json)?\s*|```\s*$", "", text, flags=re.MULTILINE).strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end == -1 or end < start:
         raise ValueError("no JSON object in model output")
-    return json.loads(raw[start:end + 1])
+    sub = text[start:end + 1]
+    sub = re.sub(r",\s*([\]}])", r"\1", sub)      # trailing commas
+    sub = _CONTROL.sub("", sub)                    # 0x00-0x1F except \t \n \r
+    return json.loads(sub)
 
 
 def _stub(text: str) -> ReportAnalysis:
     return ReportAnalysis(incident_type=IncidentType.OTHER, location_text=None,
                           severity=3, summary=text[:100], confidence=0.1)
+
+
+def _chat(system: str, norm_text: str, image: bytes | None, shots: list[dict],
+          timeout: float) -> str:
+    """One JSON-mode model call, degraded to text-only when vision fails.
+
+    A vision failure (API error, truncated/invalid response) retries the same
+    attempt without the image instead of consuming a slot of the retry budget.
+    """
+    if image is None:
+        return chat(system, norm_text, image=None, history=shots,
+                    timeout=timeout, json_mode=True)
+    try:
+        return chat(system, norm_text, image=image, history=shots,
+                    timeout=timeout, json_mode=True)
+    except (APIError, ValueError) as e:
+        log.warning("vision call failed (%s: %s); retrying text-only", type(e).__name__, e)
+        return chat(system, norm_text, image=None, history=shots,
+                    timeout=timeout, json_mode=True)
 
 
 def analyze_report(text: str, image: bytes | None = None) -> ReportAnalysis:
@@ -60,8 +95,8 @@ def analyze_report(text: str, image: bytes | None = None) -> ReportAnalysis:
             last_err = last_err or TimeoutError("analysis budget exhausted")
             break
         try:
-            raw = chat(system, norm_text, image=image, history=shots,
-                       timeout=min(config.REQUEST_TIMEOUT, remaining))
+            raw = _chat(system, norm_text, image, shots,
+                        timeout=min(config.REQUEST_TIMEOUT, remaining))
             parsed = ReportAnalysis(**_extract_json(raw))
             return apply_safety_net(norm_text, parsed)
         except (ValueError, ValidationError) as e:  # bad JSON / schema mismatch

@@ -57,3 +57,43 @@ def test_image_data_url_uses_detected_mime(monkeypatch):
     client.chat("system", "user", image=b"\x89PNG\r\n\x1a\nrest")
     url = seen["messages"][1]["content"][1]["image_url"]["url"]
     assert url.startswith("data:image/png;base64,")
+
+
+def test_json_mode_is_on_by_default_and_can_be_disabled(monkeypatch):
+    seen = {}
+
+    def create(**kw):
+        seen.clear()
+        seen.update(kw)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            finish_reason="stop", message=SimpleNamespace(content="{}"))])
+
+    monkeypatch.setattr(client, "_get_client", lambda: SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+
+    client.chat("system", "user")
+    assert seen["response_format"] == {"type": "json_object"}
+
+    client.chat("system", "user", json_mode=True)
+    assert seen["response_format"] == {"type": "json_object"}
+
+    client.chat("system", "user", json_mode=False)
+    assert "response_format" not in seen
+
+
+def test_json_mode_survives_image_and_timeout(monkeypatch):
+    seen = {}
+
+    def create(**kw):
+        seen.clear()
+        seen.update(kw)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            finish_reason="stop", message=SimpleNamespace(content="{}"))])
+
+    monkeypatch.setattr(client, "_get_client", lambda: SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+
+    client.chat("system", "user", image=b"\x89PNG\r\n\x1a\nrest", timeout=3.5)
+    assert seen["response_format"] == {"type": "json_object"}
+    assert seen["timeout"] == 3.5
+    assert seen["messages"][1]["content"][1]["image_url"]["url"].startswith("data:image/png;base64,")

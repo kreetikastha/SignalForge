@@ -14,7 +14,7 @@ def main() -> int:
     print("\n[1] raw call ...")
     t0 = time.time()
     try:
-        print("   ->", chat("Reply with one word.", "Say OK").strip()[:80])
+        print("   ->", chat("Reply with one word.", "Say OK", json_mode=False).strip()[:80])
         print(f"   ({time.time() - t0:.1f}s)")
     except Exception as e:
         print(f"FAIL after {time.time() - t0:.0f}s: {type(e).__name__}: {e}")
