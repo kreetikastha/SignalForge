@@ -1,7 +1,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, Integer, String, Text
+from sqlalchemy import DateTime, Float, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
@@ -31,6 +31,12 @@ class Report(Base):
     analysis_status: Mapped[str] = mapped_column(
         String, nullable=False, default="pending"
     )
+    location_text: Mapped[str | None] = mapped_column(String, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    urgency_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duplicate_of: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    image_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    image_mime_type: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Human-managed incident status
     status: Mapped[str] = mapped_column(String, nullable=False, default="new")

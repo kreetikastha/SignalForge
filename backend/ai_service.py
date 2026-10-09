@@ -9,7 +9,7 @@ if str(AI_PACKAGE_DIR) not in sys.path:
 logger = logging.getLogger(__name__)
 
 
-def _mock_analyze(description: str) -> dict[str, str]:
+def _mock_analyze(description: str) -> dict[str, object]:
     text = description.lower()
 
     incident_type = "unknown"
@@ -17,9 +17,7 @@ def _mock_analyze(description: str) -> dict[str, str]:
     people_trapped = "unknown"
     road_blocked = "unknown"
 
-    if any(word in text for word in ["collapse", "collapsed"]):
-        incident_type = "building_collapse"
-    elif any(word in text for word in ["flood", "flooding", "inundated"]):
+    if any(word in text for word in ["flood", "flooding", "inundated"]):
         incident_type = "flood"
         severity = (
             "critical"
@@ -29,11 +27,14 @@ def _mock_analyze(description: str) -> dict[str, str]:
             )
             else "high"
         )
-    elif any(word in text for word in ["fire", "burning", "smoke"]):
-        incident_type = "fire"
-        severity = "high"
     elif any(word in text for word in ["landslide", "mudslide"]):
         incident_type = "landslide"
+        severity = "high"
+    elif any(word in text for word in ["collapse", "collapsed"]):
+        incident_type = "building_collapse"
+        severity = "high"
+    elif any(word in text for word in ["fire", "burning", "smoke"]):
+        incident_type = "fire"
         severity = "high"
 
     if any(word in text for word in ["people trapped", "people are trapped"]):
@@ -58,11 +59,15 @@ def _mock_analyze(description: str) -> dict[str, str]:
     }
 
 
-def analyze_report(description: str) -> dict[str, str]:
+def analyze_report(
+    description: str, image: bytes | None = None
+) -> dict[str, object]:
     try:
         from disasterlens_ai.adapter import analyze_for_backend
 
-        return analyze_for_backend(description)
+        if image is None:
+            return analyze_for_backend(description)
+        return analyze_for_backend(description, image=image)
     except Exception as exc:
         logger.warning(
             "AI analysis failed; using keyword-based fallback.",

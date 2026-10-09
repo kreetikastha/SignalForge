@@ -22,7 +22,7 @@
       <div class="workspace-label">Operations</div>
       <nav class="nav" aria-label="Main navigation">
         <a class="nav-link active" href="#overview" data-view="overview" title="Overview"><i data-lucide="layout-dashboard"></i><span>Overview</span></a>
-        <a class="nav-link" href="#incidents" data-view="incidents" title="Incidents"><i data-lucide="triangle-alert"></i><span>Incidents</span><span class="nav-count" id="sidebarCount">00</span></a>
+        <a class="nav-link" href="#incidents" data-view="incidents" title="Incidents"><i data-lucide="triangle-alert"></i><span>Incidents</span><span class="nav-count" id="sidebarCount">—</span></a>
         <a class="nav-link" href="#map" data-view="map" title="Live map"><i data-lucide="map"></i><span>Live map</span></a>
         <a class="nav-link" href="#reports" title="Report intake" aria-label="Open report intake"><i data-lucide="inbox"></i><span>Report intake</span></a>
       </nav>
@@ -59,10 +59,10 @@
       </section>
 
       <section class="metrics" aria-label="Incident summary">
-        <article class="metric metric--open"><div class="metric-icon"><i data-lucide="activity"></i></div><div><div class="metric-label">Open incidents</div><div class="metric-value" id="openCount">00</div></div><div class="metric-change">not resolved</div></article>
-        <article class="metric metric--urgent"><div class="metric-icon red"><i data-lucide="siren"></i></div><div><div class="metric-label">Urgent attention</div><div class="metric-value" id="urgentCount">00</div></div><div class="metric-change hot">priority queue</div></article>
-        <article class="metric metric--duplicates"><div class="metric-icon amber"><i data-lucide="copy-check"></i></div><div><div class="metric-label">Possible duplicates</div><div class="metric-value" id="duplicateCount">00</div></div><div class="metric-change">when available</div></article>
-        <article class="metric metric--received"><div class="metric-icon blue"><i data-lucide="messages-square"></i></div><div><div class="metric-label">Incidents loaded</div><div class="metric-value" id="reportCount">00</div></div><div class="metric-change">from API</div></article>
+        <article class="metric metric--open"><div class="metric-icon"><i data-lucide="activity"></i></div><div><div class="metric-label">Open incidents</div><div class="metric-value" id="openCount">—</div></div><div class="metric-change">unresolved groups</div></article>
+        <article class="metric metric--urgent"><div class="metric-icon red"><i data-lucide="siren"></i></div><div><div class="metric-label">Urgent attention</div><div class="metric-value" id="urgentCount">—</div></div><div class="metric-change hot">open high/critical groups</div></article>
+        <article class="metric metric--duplicates"><div class="metric-icon amber"><i data-lucide="copy-check"></i></div><div><div class="metric-label">Possible duplicates</div><div class="metric-value" id="duplicateCount">—</div></div><div class="metric-change">when available</div></article>
+        <article class="metric metric--received"><div class="metric-icon blue"><i data-lucide="messages-square"></i></div><div><div class="metric-label">Incidents loaded</div><div class="metric-value" id="reportCount">—</div></div><div class="metric-change">unique groups from API</div></article>
       </section>
 
       <section class="content-grid">
@@ -76,7 +76,7 @@
         </article>
 
         <article class="panel queue-panel" id="incidents">
-          <div class="panel-head"><div class="queue-heading"><div><h2 class="panel-title">Priority queue</h2><div class="panel-kicker">Ranked by reported severity and received time</div></div><span class="queue-count" id="queueCount">00</span></div><button class="icon-button" id="sortButton" title="Sort incidents" aria-label="Sort incidents"><i data-lucide="arrow-down-wide-narrow"></i></button></div>
+          <div class="panel-head"><div class="queue-heading"><div><h2 class="panel-title">Priority queue</h2><div class="panel-kicker">AI or fallback triage, highest priority first</div></div><span class="queue-count" id="queueCount">—</span></div><button class="icon-button" id="sortButton" title="Sort incidents" aria-label="Sort incidents"><i data-lucide="arrow-down-wide-narrow"></i></button></div>
           <div class="queue-controls" role="group" aria-label="Filter incidents">
             <button class="filter-button active" data-filter="all">All</button><button class="filter-button" data-filter="urgent">Urgent</button><button class="filter-button" data-filter="duplicate">Duplicates</button>
           </div>
@@ -87,10 +87,11 @@
 
       <section class="detail-strip" aria-live="polite">
         <div><div class="detail-label">Selected incident</div><div class="detail-main" id="detailTitle">Select an incident</div></div>
-        <div class="detail-description" id="detailDescription">Choose a report from the priority queue to review its location, urgency, and source summary.</div>
+        <div><div class="detail-description" id="detailDescription">Choose a report from the priority queue to review its location, urgency, and source summary.</div><div class="detail-explainer" id="detailExplainer">Priority scores help order reports for human review; they are not probabilities. Confidence is shown only for AI model analyses.</div></div>
+        <div class="detail-photo" id="detailPhoto" hidden><div class="detail-label">Attached photo</div><img class="detail-image" id="detailImage" alt="Image attached to selected incident"></div>
         <div class="detail-actions"><button class="secondary-button" id="zoomButton"><i data-lucide="locate-fixed"></i> Locate</button><button class="secondary-button" id="copyCoordinatesButton" disabled><i data-lucide="copy"></i><span>Copy coordinates</span></button></div>
       </section>
-      <div class="demo-note">Incident data is read from the local API · No emergency services are contacted</div>
+      <div class="demo-note">Counts come from reports saved in the local API; earlier test submissions remain in SQLite until removed · No emergency services are contacted</div>
     </main>
   </div>
 
@@ -100,14 +101,14 @@
       <div class="dialog-body">
         <div class="field"><label for="reportText">What is happening?</label><textarea id="reportText" required minlength="5" maxlength="4500" placeholder="Describe what you saw, what is affected, and any immediate danger..."></textarea><div class="field-hint">Include landmarks or a street name to help responders locate the incident.</div></div>
         <div class="field"><label for="reportLocation">Landmark or area (optional)</label><div class="location-entry"><input id="reportLocation" type="text" maxlength="250" placeholder="Street, landmark, or neighborhood"><button class="secondary-button location-button" type="button" id="useLocation"><i data-lucide="locate-fixed"></i><span id="locationButtonLabel">Use my location</span></button></div><div class="field-hint">The API requires latitude and longitude. Capture GPS or enter coordinates below.</div><div class="coordinate-entry"><div class="coordinate-field"><label for="reportLatitude">Latitude</label><input id="reportLatitude" type="number" step="any" min="-90" max="90" required placeholder="e.g. 27.7172"></div><div class="coordinate-field"><label for="reportLongitude">Longitude</label><input id="reportLongitude" type="number" step="any" min="-180" max="180" required placeholder="e.g. 85.3240"></div></div></div>
-        <div class="field"><label>Images</label><div class="unsupported-field"><i data-lucide="image-off"></i><span>Image upload isn’t supported by the current report API.</span></div></div>
+        <div class="field"><label for="reportImage">Photo (optional)</label><input id="reportImage" type="file" accept="image/jpeg,image/png,image/webp"><div class="field-hint">JPEG, PNG, or WebP · maximum 5 MB. The image is stored with the report and sent for AI analysis.</div><img class="image-preview" id="reportImagePreview" alt="Selected report photo preview" hidden></div>
       </div>
-      <div class="dialog-foot"><span class="field-hint">Analysis currently uses the backend keyword mock.</span><div class="dialog-buttons"><button type="button" class="secondary-button" id="cancelDialog">Cancel</button><button class="primary-button" id="submitReportButton" type="submit"><i data-lucide="send"></i><span>Submit report</span></button></div></div>
+      <div class="dialog-foot"><span class="field-hint">Submit sends this report to the DisasterLens backend, which saves it and returns it to the incident feed. Verify urgent details.</span><div class="dialog-buttons"><button type="button" class="secondary-button" id="cancelDialog">Cancel</button><button class="primary-button" id="submitReportButton" type="submit"><i data-lucide="send"></i><span>Submit report</span></button></div></div>
     </form>
   </dialog>
   <div class="toast" id="toast" role="status"><i data-lucide="circle-check"></i><span id="toastMessage">Report added to the priority queue.</span></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="script.js"></script>
+  <script src="script.js?v=20261009-2"></script>
 </body>
 </html>

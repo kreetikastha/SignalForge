@@ -3,6 +3,14 @@ from disasterlens_ai import adapter
 from disasterlens_ai.schemas import IncidentType, ReportAnalysis
 
 
+def _return_analysis(analysis):
+    def analyze(*args, **kwargs):
+        _ = args, kwargs
+        return analysis
+
+    return analyze
+
+
 def test_stub_has_all_backend_keys(monkeypatch):
     from disasterlens_ai import config
 
@@ -35,14 +43,16 @@ def test_severity_mapping_and_urgency_reason(monkeypatch):
         road_blocked="yes",
         vulnerable_groups=["children"],
     )
-    monkeypatch.setattr(adapter, "analyze_report", lambda *_args, **_kwargs: analysis)
+    monkeypatch.setattr(adapter, "analyze_report", _return_analysis(analysis))
 
     result = adapter.analyze_for_backend("A building collapsed.")
 
     assert result["severity"] == "critical"
     assert result["analysis_status"] == "completed"
-    assert "trapped" in result["priority_reason"]
-    assert 0 < result["urgency_score"] <= 100
+    priority_reason = result["priority_reason"]
+    urgency_score = result["urgency_score"]
+    assert isinstance(priority_reason, str) and "trapped" in priority_reason
+    assert isinstance(urgency_score, int) and 0 < urgency_score <= 100
 
 
 def test_adapter_uses_explicit_blocked_access_in_report(monkeypatch):
@@ -52,7 +62,7 @@ def test_adapter_uses_explicit_blocked_access_in_report(monkeypatch):
         summary="A fallen tree is blocking access.",
         confidence=0.8,
     )
-    monkeypatch.setattr(adapter, "analyze_report", lambda *_args, **_kwargs: analysis)
+    monkeypatch.setattr(adapter, "analyze_report", _return_analysis(analysis))
 
     result = adapter.analyze_for_backend(
         "Strong winds caused a tree to fall across a local road. "
@@ -61,7 +71,9 @@ def test_adapter_uses_explicit_blocked_access_in_report(monkeypatch):
 
     assert result["incident_type"] == "road_blockage"
     assert result["road_blocked"] == "yes"
-    assert "access road blocked" in result["priority_reason"]
+    priority_reason = result["priority_reason"]
+    assert isinstance(priority_reason, str)
+    assert "access road blocked" in priority_reason
 
 
 def test_vehicle_stopped_does_not_infer_trapped_people(monkeypatch):
@@ -71,7 +83,7 @@ def test_vehicle_stopped_does_not_infer_trapped_people(monkeypatch):
         summary="A bus is stopped near a landslide.",
         confidence=0.9,
     )
-    monkeypatch.setattr(adapter, "analyze_report", lambda *_args, **_kwargs: analysis)
+    monkeypatch.setattr(adapter, "analyze_report", _return_analysis(analysis))
 
     result = adapter.analyze_for_backend("A bus is stopped nearby.")
 
@@ -80,7 +92,8 @@ def test_vehicle_stopped_does_not_infer_trapped_people(monkeypatch):
 
 
 def test_backend_service_falls_back_when_ai_analysis_fails(monkeypatch, caplog):
-    def fail_analysis(_description):
+    def fail_analysis(description):
+        assert description == "Smoke near the market"
         raise RuntimeError("AI unavailable")
 
     monkeypatch.setattr(adapter, "analyze_for_backend", fail_analysis)
@@ -89,7 +102,8 @@ def test_backend_service_falls_back_when_ai_analysis_fails(monkeypatch, caplog):
 
     assert result["incident_type"] == "fire"
     assert result["analysis_status"] == "mock"
-    assert "RuntimeError" in result["priority_reason"]
+    priority_reason = result["priority_reason"]
+    assert isinstance(priority_reason, str) and "RuntimeError" in priority_reason
     assert "AI analysis failed" in caplog.text
 
 
@@ -102,3 +116,11 @@ def test_mock_fallback_does_not_mistake_trapped_flood_victims_for_collapse():
     assert result["severity"] == "critical"
     assert result["people_trapped"] == "yes"
     assert result["road_blocked"] == "yes"
+
+
+def test_mock_fallback_classifies_collapsed_landslide_as_landslide():
+    result = ai_service._mock_analyze(
+        "A landslide covered the road after the slope collapsed."
+    )
+
+    assert result["incident_type"] == "landslide"

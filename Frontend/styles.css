@@ -140,14 +140,17 @@
     .severity.low { background: var(--blue-soft); color: var(--blue); }
     .severity.unknown { background: #edf0ed; color: #68736c; }
     .incident-location { margin: 6px 0 0 22px; color: #606c64; font-size: 10px; }
-    .incident-meta { display: flex; align-items: center; gap: 8px; margin: 7px 0 0 22px; color: #879189; font-size: 9px; }
+    .incident-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 8px; margin: 7px 0 0 22px; color: #758078; font-size: 9px; }
+    .incident-thumbnail { float: right; width: 64px; height: 48px; margin: 6px 0 4px 9px; border: 1px solid var(--line); border-radius: 4px; object-fit: cover; background: #f3f5f2; }
     .duplicate-flag { color: #9b6b18; font-weight: 600; }
     .queue-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 11px 14px; margin-top: auto; border-top: 1px solid var(--line); color: #78837b; font-size: 10px; }
     .queue-footer strong { color: var(--green); font-weight: 600; }
-    .detail-strip { display: grid; grid-template-columns: minmax(180px, 1fr) 1.35fr auto; align-items: center; gap: 18px; padding: 14px 16px; margin-top: 15px; border: 1px solid var(--line); border-radius: 6px; background: #fff; box-shadow: var(--shadow); }
+    .detail-strip { display: grid; grid-template-columns: minmax(180px, 1fr) 1.35fr auto auto; align-items: center; gap: 18px; padding: 14px 16px; margin-top: 15px; border: 1px solid var(--line); border-radius: 6px; background: #fff; box-shadow: var(--shadow); }
     .detail-label { color: #89938c; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; }
     .detail-main { margin-top: 4px; font-size: 12px; font-weight: 700; }
     .detail-description { color: #657168; font-size: 11px; line-height: 1.5; }
+    .detail-explainer { margin-top: 7px; color: #7a857d; font-size: 9px; line-height: 1.4; }
+    .detail-photo { display: grid; gap: 5px; }
     .detail-actions { display: flex; gap: 6px; }
     .secondary-button { height: 31px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 9px; border: 1px solid var(--line); border-radius: 4px; background: #fff; font-size: 10px; font-weight: 600; cursor: pointer; white-space: nowrap; }
     .secondary-button:hover { background: #f7f9f6; }
@@ -181,8 +184,10 @@
     .coordinate-entry { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
     .coordinate-field { display: grid; gap: 5px; }
     .coordinate-field label { color: #69776f; font-size: 9px; }
-    .unsupported-field { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 9px 10px; border: 1px solid #e4e8e3; border-radius: 4px; color: #748078; font-size: 10px; }
-    .unsupported-field i { width: 15px; height: 15px; color: #839087; flex: 0 0 auto; }
+    .field input[type="file"] { width: 100%; border: 1px dashed #cbd7cb; border-radius: 4px; padding: 10px; background: #f8faf7; font-size: 10px; }
+    .image-preview { display: block; max-width: 100%; max-height: 180px; object-fit: contain; justify-self: start; border: 1px solid var(--line); border-radius: 4px; }
+    .image-preview[hidden], .detail-image[hidden], .detail-photo[hidden] { display: none; }
+    .detail-image { display: block; width: 180px; height: 128px; object-fit: contain; border: 1px solid var(--line); border-radius: 4px; background: #f3f5f2; }
     .field textarea { min-height: 98px; resize: vertical; line-height: 1.5; }
     .field textarea:focus, .field input:focus { border-color: #6d9a7c; box-shadow: 0 0 0 3px rgba(65,125,84,.1); }
     .field-hint { color: #8a948d; font-size: 9px; }
@@ -234,7 +239,8 @@
       .incident-list { flex: 0 0 auto; max-height: 295px; }
       .detail-strip { grid-template-columns: minmax(0, 1fr) auto; gap: 11px; }
       .detail-description { grid-column: 1 / -1; grid-row: 2; }
-      .detail-actions { grid-column: 2; grid-row: 1; }
+      .detail-photo { grid-column: 1; grid-row: 3; }
+      .detail-actions { grid-column: 2; grid-row: 3; }
       .demo-note { text-align: left; }
     }
     @media (max-width: 430px) {
