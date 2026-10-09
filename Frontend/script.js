@@ -71,17 +71,20 @@
       return [...groups.values()];
     }
 
-    function sortedReports() {
+    function sortedReports(severityFirst = false) {
       return [...reports].sort((left, right) => {
         const urgencyScore = (right.urgencyScore ?? -1) - (left.urgencyScore ?? -1);
         const urgency = severityRank[right.severity] - severityRank[left.severity];
         const timeOrder = (right.receivedAt ?? 0) - (left.receivedAt ?? 0);
+        if (severityFirst) return urgency || urgencyScore || timeOrder;
         return urgencyFirst ? urgencyScore || urgency || timeOrder : timeOrder;
       });
     }
     function visibleReports() {
+      if (activeFilter === 'urgent') {
+        return sortedReports(true).filter((report) => ['critical', 'high'].includes(report.severity));
+      }
       const ordered = sortedReports();
-      if (activeFilter === 'urgent') return ordered.filter((report) => ['critical', 'high'].includes(report.severity));
       if (activeFilter === 'duplicate') return ordered.filter((report) => report.duplicate === true);
       return ordered;
     }
