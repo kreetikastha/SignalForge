@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from disasterlens_ai import find_duplicate, score_urgency
+from disasterlens_ai import config, dedup, find_duplicate, score_urgency
 from disasterlens_ai.dedup import _tokens
 from disasterlens_ai.schemas import IncidentRef, ReportAnalysis
 
@@ -101,3 +101,62 @@ def test_naive_and_aware_datetimes_do_not_raise():
     assert find_duplicate(new, naive_inc, now=aware_now).is_duplicate
     assert find_duplicate(new, aware_inc, now=naive_now).is_duplicate
     assert find_duplicate(new, naive_inc, now=naive_now).is_duplicate
+
+
+def _borderline_pair():
+    # heuristic score 0.6*(1/3) + 0.4*(3/5) = 0.44 -> JUDGE_LOW <= x < DUPLICATE_THRESHOLD
+    return (_a("Kalimati bridge", "Fire in a shop"),
+            [_ref("j1", "Kalimati market", "Fire at a shop")])
+
+
+def _enable_judge(monkeypatch):
+    monkeypatch.setattr(config, "JUDGE_ENABLED", True)
+    monkeypatch.setattr(config, "STUB_MODE", False)
+
+
+def test_judge_true_marks_borderline_duplicate(monkeypatch):
+    _enable_judge(monkeypatch)
+    seen = {}
+
+    def fake_chat(system, user):
+        seen["system"], seen["user"] = system, user
+        return '{"same_incident": true, "reason": "same shop fire at Kalimati"}'
+
+    monkeypatch.setattr(dedup, "chat", fake_chat)
+    new, existing = _borderline_pair()
+    m = find_duplicate(new, existing)
+    assert m.is_duplicate and m.incident_id == "j1"
+    assert "same shop fire at Kalimati" in m.reason
+    assert "Kalimati bridge" in seen["user"] and "Kalimati market" in seen["user"]
+    assert "same_incident" in seen["system"]
+
+
+def test_judge_exception_keeps_heuristic(monkeypatch):
+    _enable_judge(monkeypatch)
+
+    def boom(system, user):
+        raise RuntimeError("no network")
+
+    monkeypatch.setattr(dedup, "chat", boom)
+    new, existing = _borderline_pair()
+    m = find_duplicate(new, existing)
+    assert not m.is_duplicate and m.incident_id is None and m.similarity == 0.44
+
+
+def test_judge_garbage_output_keeps_heuristic(monkeypatch):
+    _enable_judge(monkeypatch)
+    monkeypatch.setattr(dedup, "chat", lambda system, user: "sorry, no json here")
+    new, existing = _borderline_pair()
+    m = find_duplicate(new, existing)
+    assert not m.is_duplicate and m.incident_id is None and m.similarity == 0.44
+
+
+def test_judge_disabled_never_calls_chat(monkeypatch):
+    monkeypatch.setattr(config, "JUDGE_ENABLED", False)
+    monkeypatch.setattr(config, "STUB_MODE", False)
+    calls = []
+    monkeypatch.setattr(dedup, "chat", lambda *a, **k: calls.append(a))
+    new, existing = _borderline_pair()
+    m = find_duplicate(new, existing)
+    assert calls == []
+    assert not m.is_duplicate and m.similarity == 0.44

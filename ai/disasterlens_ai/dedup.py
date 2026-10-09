@@ -1,8 +1,11 @@
+import json
 import math
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from . import config
+from .analyzer import _extract_json
+from .client import chat
 from .schemas import IncidentMatch, IncidentRef, ReportAnalysis
 
 
@@ -41,6 +44,25 @@ def _geo_score(dist_km: float) -> float:
     return (config.DUP_FAR_KM - dist_km) / (config.DUP_FAR_KM - config.DUP_NEAR_KM)
 
 
+def _judge(new: ReportAnalysis, inc: IncidentRef) -> tuple[bool, str] | None:
+    """Ask the LLM whether two borderline reports describe the same incident.
+    Returns (same_incident, reason), or None on any failure. Never raises."""
+    try:
+        system = (config.PROMPTS_DIR / "dedup_judge.txt").read_text(encoding="utf-8")
+        user = json.dumps({
+            "report_a": {"incident_type": new.incident_type.value,
+                         "location_text": new.location_text, "summary": new.summary},
+            "report_b": {"incident_type": inc.incident_type.value,
+                         "location_text": inc.location_text, "summary": inc.summary},
+        }, ensure_ascii=False)
+        data = _extract_json(chat(system, user))
+        if not isinstance(data.get("same_incident"), bool):
+            return None
+        return data["same_incident"], str(data.get("reason", ""))
+    except Exception:
+        return None
+
+
 def find_duplicate(new: ReportAnalysis, existing: list[IncidentRef], *,
                    latitude: float | None = None, longitude: float | None = None,
                    now: datetime | None = None) -> IncidentMatch:
@@ -48,8 +70,12 @@ def find_duplicate(new: ReportAnalysis, existing: list[IncidentRef], *,
     When BOTH sides carry coordinates: score = 0.4*loc + 0.3*txt + 0.3*geo, and an
     incident farther than DUP_HARD_CUTOFF_KM is never a duplicate. Incidents with
     received_at older than DUP_WINDOW_HOURS before `now` are ignored.
-    TODO: add embeddings / LLM judge for borderline cases, plus time window tuning."""
+    Borderline scores (JUDGE_LOW <= score < DUPLICATE_THRESHOLD) are optionally
+    confirmed by an LLM judge when JUDGE_ENABLED and not STUB_MODE; any judge
+    failure silently keeps the heuristic result.
+    TODO: add embeddings + time window tuning."""
     best = IncidentMatch(is_duplicate=False, similarity=0.0)
+    best_inc: IncidentRef | None = None
     for inc in existing:
         if inc.incident_type != new.incident_type:
             continue
@@ -72,6 +98,15 @@ def find_duplicate(new: ReportAnalysis, existing: list[IncidentRef], *,
             best = IncidentMatch(is_duplicate=score >= config.DUPLICATE_THRESHOLD,
                                  incident_id=inc.id, similarity=round(score, 3),
                                  reason=f"location {loc:.2f}, text {txt:.2f}{geo_reason}")
+            best_inc = inc
+    if (not best.is_duplicate and best_inc is not None
+            and config.JUDGE_ENABLED and not config.STUB_MODE
+            and config.JUDGE_LOW <= best.similarity < config.DUPLICATE_THRESHOLD):
+        verdict = _judge(new, best_inc)
+        if verdict is not None and verdict[0]:
+            best.is_duplicate = True
+            if verdict[1]:
+                best.reason = f"{best.reason}; judge: {verdict[1]}"
     if not best.is_duplicate:
         best.incident_id = None
     return best
