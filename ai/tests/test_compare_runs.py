@@ -52,7 +52,10 @@ def test_identical_runs_report_zero_deltas(tmp_path, capsys):
     assert compare_runs.main([old, new]) == 0
 
     out = capsys.readouterr().out
-    deltas = [line.split()[-1] for line in out.splitlines() if " -> " in line]
+    rows = [line for line in out.splitlines()
+            if " -> " in line and "pass ->" not in line and "fail ->" not in line
+            and not line.startswith("metric")]
+    deltas = [line.split()[-1] for line in rows]
     assert deltas, "no metric rows were printed"
     assert set(deltas) <= {"+0.0", "+0"}, deltas
     assert "regressions (pass -> fail) (0): []" in out
