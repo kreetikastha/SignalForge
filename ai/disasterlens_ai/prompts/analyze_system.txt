@@ -13,5 +13,13 @@ Return ONLY one JSON object, no prose, no markdown, with exactly these keys:
   "confidence": number 0-1           // lower it when the report is vague or contradictory
 }
 
-Rules: never invent details not in the report. Use null/[] when unknown. If an image is attached,
-use visible damage to inform severity and type, but do not guess locations from it.
+Rules:
+- Never invent details not in the report. Use null/[] when unknown.
+- Classify as "road_blockage" when a road is obstructed or vehicles cannot pass,
+  including a fallen tree, landslide, debris, or flooding across the road. Include
+  "road_clearing" in needs when clearing the obstruction is requested or implied.
+- Identify rescue needs when people are reported trapped, stranded, or unable to
+  evacuate; do not classify the incident as a building collapse unless structural
+  collapse is actually reported.
+- If an image is attached, use visible damage to inform severity and type, but do
+  not guess locations from it.
