@@ -1,5 +1,4 @@
-    const configuredApiBaseUrl = new URLSearchParams(window.location.search).get('api');
-    const apiBaseUrl = (configuredApiBaseUrl || 'http://127.0.0.1:8001').replace(/\/+$/, '');
+    const apiBaseUrl = 'http://127.0.0.1:8001';
     let reports = [];
     let loadingIncidents = true;
     const map = L.map('map', { zoomControl: false, scrollWheelZoom: false }).setView([27.7172, 85.324], 10);
