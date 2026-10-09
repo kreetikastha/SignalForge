@@ -15,6 +15,15 @@ def _get_client() -> OpenAI:
     return _client
 
 
+def _detect_mime(image: bytes) -> str:
+    """Best-effort MIME for the data URL: png / webp / otherwise jpeg."""
+    if image[:4] == b"\x89PNG":
+        return "image/png"
+    if image[0:4] == b"RIFF" and image[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/jpeg"
+
+
 def chat(system: str, user_text: str, image: bytes | None = None,
          history: list[dict] | None = None) -> str:
     """One model call. Returns raw text. `history` = few-shot message pairs."""
@@ -22,10 +31,12 @@ def chat(system: str, user_text: str, image: bytes | None = None,
     if image:
         b64 = base64.b64encode(image).decode()
         content.append({"type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+                        "image_url": {"url": f"data:{_detect_mime(image)};base64,{b64}"}})
     messages = [{"role": "system", "content": system}, *(history or []),
                 {"role": "user", "content": content if image else user_text}]
     resp = _get_client().chat.completions.create(
         model=config.LLM_MODEL, messages=messages, temperature=0.1,
         max_tokens=config.MAX_TOKENS)
+    if resp.choices[0].finish_reason == "length":
+        raise ValueError("response truncated")
     return resp.choices[0].message.content or ""
