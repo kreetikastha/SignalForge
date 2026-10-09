@@ -50,6 +50,48 @@ def test_rule_b_trapped_terms_devanagari():
     assert "trapped_keyword_override" in res.flags
 
 
+def test_rule_b_trapped_terms_romanized_nepali():
+    a = _analysis(people_trapped="unknown", severity=3)
+    res = apply_safety_net("Ghar bhatkiyo, 2 jana phaseka chan", a)
+    assert res.people_trapped == "yes"
+    assert res.severity == 4
+    assert "trapped_keyword_override" in res.flags
+
+
+def test_rule_b_trapped_terms_romanized_variants():
+    for text, term in [
+        ("Ghar bhattyo, faseko cha", "faseko"),
+        ("2 jana adkiyeko cha", "adkiyeko"),
+        ("Pahiro le puriyeka chan", "puriyeka"),
+        ("Bhitta le chyapiyeko cha", "chyapiyeko"),
+        ("2 jana under the debris chan", "under the debris"),
+        ("Gadi stuck inside cha", "stuck inside"),
+    ]:
+        a = _analysis(people_trapped="unknown", severity=3)
+        res = apply_safety_net(text, a)
+        assert res.people_trapped == "yes", term
+        assert res.severity == 4, term
+        assert "trapped_keyword_override" in res.flags, term
+
+
+def test_rule_b_word_boundaries_reject_substring_hits():
+    # "untrapped"/"unburied"/"unstuck" contain trapped terms as substrings but
+    # do not denote trapped people, so \b matching must keep them out.
+    a = _analysis(people_trapped="unknown", severity=3)
+    res = apply_safety_net("The unburied waste was cleared; nobody was untrapped or unstuck", a)
+    assert res.people_trapped == "unknown"
+    assert res.severity == 3
+    assert "trapped_keyword_override" not in res.flags
+    assert "severity_floor_trapped" not in res.flags
+
+
+def test_rule_b_still_matches_next_to_punctuation():
+    a = _analysis(people_trapped="unknown", severity=3)
+    res = apply_safety_net("Ghar bhatkiyo, 2 jana phaseka!", a)
+    assert res.people_trapped == "yes"
+    assert "trapped_keyword_override" in res.flags
+
+
 def test_rule_c_severity_floor_english():
     a = _analysis(people_trapped="unknown", severity=2)
     res = apply_safety_net("Two people are stuck in the elevator", a)
@@ -96,6 +138,30 @@ def test_negation_guard_blocks_b_and_c_devanagari():
     assert res.severity == 2
     assert "trapped_keyword_override" not in res.flags
     assert "severity_floor_trapped" not in res.flags
+
+
+def test_negation_guard_romanized_nepali():
+    a = _analysis(people_trapped="no", severity=2)
+    res = apply_safety_net("Ghar bhatkiyo tara koi faseko chaina", a)
+    assert res.people_trapped == "no"
+    assert res.severity == 2
+    assert "trapped_keyword_override" not in res.flags
+    assert "severity_floor_trapped" not in res.flags
+
+
+@pytest.mark.parametrize("negation", [
+    "kohe faseko chaina",
+    "koohe faseko xaina",
+    "kasailai kehi bhayeko chaina",
+    "no casualties",
+    "faseko chaina",
+])
+def test_negation_guard_romanized_variants(negation):
+    # A trapped term appears elsewhere in the text, but the negation must win.
+    a = _analysis(people_trapped="unknown", severity=2)
+    res = apply_safety_net(f"2 jana phaseka chan, tara {negation}", a)
+    assert res.people_trapped != "yes"
+    assert "trapped_keyword_override" not in res.flags
 
 
 def test_severity_5_stays_5():
