@@ -1,6 +1,8 @@
 import json
 import re
+import time
 import unicodedata
+from openai import APIError
 from pydantic import ValidationError
 from . import config
 from .client import chat
@@ -50,15 +52,24 @@ def analyze_report(text: str, image: bytes | None = None) -> ReportAnalysis:
     if config.STUB_MODE:
         return _stub(norm_text)
     system, shots = _load_prompt(), _load_examples()
+    deadline = time.monotonic() + config.TOTAL_TIMEOUT
     last_err: Exception | None = None
     for _ in range(config.MAX_RETRIES + 1):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:  # out of budget: do not start an attempt that cannot finish
+            last_err = last_err or TimeoutError("analysis budget exhausted")
+            break
         try:
-            raw = chat(system, norm_text, image=image, history=shots)
+            raw = chat(system, norm_text, image=image, history=shots,
+                       timeout=min(config.REQUEST_TIMEOUT, remaining))
             parsed = ReportAnalysis(**_extract_json(raw))
             return apply_safety_net(norm_text, parsed)
         except (ValueError, ValidationError) as e:  # bad JSON / schema mismatch
             last_err = e
-    # Never crash the pipeline: return a low-confidence fallback for human review
-    fb = _stub(norm_text)
+        except (APIError, OSError) as e:  # provider timeout / transport / HTTP error
+            last_err = e
+    # Never crash the pipeline: return a low-confidence fallback for human review.
+    # The safety net still runs, so trapped/rescue keywords survive a dead provider.
+    fb = apply_safety_net(norm_text, _stub(norm_text))
     fb.summary = f"[analysis failed: {last_err}] {text[:80]}"
     return fb

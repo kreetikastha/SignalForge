@@ -26,6 +26,24 @@ def test_truncated_response_raises_value_error(monkeypatch):
         client.chat("system", "user")
 
 
+def test_per_call_timeout_overrides_the_default(monkeypatch):
+    seen = {}
+
+    def create(**kw):
+        seen.update(kw)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            finish_reason="stop", message=SimpleNamespace(content="{}"))])
+
+    monkeypatch.setattr(client, "_get_client", lambda: SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+
+    client.chat("system", "user", timeout=3.5)
+    assert seen["timeout"] == 3.5
+
+    client.chat("system", "user")
+    assert seen["timeout"] == client.config.REQUEST_TIMEOUT
+
+
 def test_image_data_url_uses_detected_mime(monkeypatch):
     seen = {}
 

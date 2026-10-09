@@ -25,8 +25,9 @@ def _detect_mime(image: bytes) -> str:
 
 
 def chat(system: str, user_text: str, image: bytes | None = None,
-         history: list[dict] | None = None) -> str:
-    """One model call. Returns raw text. `history` = few-shot message pairs."""
+         history: list[dict] | None = None, timeout: float | None = None) -> str:
+    """One model call. Returns raw text. `history` = few-shot message pairs.
+    `timeout` overrides the client-wide timeout for this call."""
     content: list[dict] = [{"type": "text", "text": user_text}]
     if image:
         b64 = base64.b64encode(image).decode()
@@ -36,7 +37,8 @@ def chat(system: str, user_text: str, image: bytes | None = None,
                 {"role": "user", "content": content if image else user_text}]
     resp = _get_client().chat.completions.create(
         model=config.LLM_MODEL, messages=messages, temperature=0.1,
-        max_tokens=config.MAX_TOKENS)
+        max_tokens=config.MAX_TOKENS,
+        timeout=timeout or config.REQUEST_TIMEOUT)
     if resp.choices[0].finish_reason == "length":
         raise ValueError("response truncated")
     return resp.choices[0].message.content or ""
