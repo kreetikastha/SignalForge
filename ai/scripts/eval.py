@@ -3,23 +3,40 @@
 A report, not a gate: the exit code is always 0."""
 import argparse
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from disasterlens_ai import analyze_report, config, find_duplicate
-from disasterlens_ai.schemas import IncidentRef
+from disasterlens_ai.schemas import IncidentRef, ReportAnalysis
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 
 
-def _run_info() -> dict:
+def _run_info(workers: int = 1) -> dict:
     """Provenance for a run, so a stub result can never pass as a live baseline."""
     return {
         "mode": "stub" if config.STUB_MODE else "live",
         "model": config.LLM_MODEL or None,
         "provider": config.LLM_BASE_URL,
         "judge_enabled": config.JUDGE_ENABLED,
+        "workers": workers,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
+
+
+def _analyze_all(samples: list[dict], workers: int) -> dict:
+    """Analyze every sample. One model call per sample, so a live run is rate-limited
+    by provider latency, not by CPU: `workers` overlaps those waits. Result order
+    follows `samples` either way."""
+    def one(sample: dict) -> tuple[str, ReportAnalysis]:
+        return sample["id"], analyze_report(sample["text"])
+
+    if workers <= 1:
+        pairs = [one(sample) for sample in samples]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            pairs = list(pool.map(one, samples))
+    return dict(pairs)
 
 
 def _rate(part: int, whole: int) -> float | None:
@@ -153,20 +170,22 @@ def main() -> int:
     p = argparse.ArgumentParser(description="Print an evaluation report for the sample set.")
     p.add_argument("--limit", type=int, default=None, help="evaluate only the first N samples")
     p.add_argument("--out", default=None, help="also write full results to this JSON file")
+    p.add_argument("--workers", type=int, default=4,
+                   help="parallel model calls (1 = serial; use 1 for a rate-limited provider)")
     args = p.parse_args()
 
     samples, expected = _load(args.limit)
-    analyses = {s["id"]: analyze_report(s["text"]) for s in samples}
+    analyses = _analyze_all(samples, args.workers)
     results = _sample_results(samples, expected, analyses)
     metrics = _summary(results)
     dup = _duplicates(samples, expected, analyses)
     safety = _safety(results)
     trapped_recall = _rate(len(safety["trapped_caught"]), len(safety["trapped"]))
 
-    run = _run_info()
+    run = _run_info(args.workers)
     print(f"samples evaluated: {len(samples)}")
     print(f"mode: {run['mode']}  model: {run['model'] or '(unset)'}  "
-          f"provider: {run['provider']}  at: {run['generated_at']}")
+          f"provider: {run['provider']}  workers: {run['workers']}  at: {run['generated_at']}")
     if run["mode"] == "stub":
         print("WARNING: stub mode (DISASTERLENS_STUB=1) - these numbers are not a "
               "live model baseline.")
