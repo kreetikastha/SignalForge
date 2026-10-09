@@ -27,6 +27,7 @@ class ReportAnalysis(BaseModel):
     summary: str
     language: Literal["ne", "en", "other"] = "en"
     confidence: float = Field(ge=0, le=1)
+    flags: list[str] = Field(default_factory=list)
 
 
 class IncidentRef(BaseModel):

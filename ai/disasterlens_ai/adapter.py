@@ -56,6 +56,12 @@ def explain_urgency(
         parts.append("access road blocked")
     if duplicate_count > 1:
         parts.append(f"{duplicate_count} corroborating reports")
+    applied_safety = [
+        f for f in analysis.flags
+        if f in ("trapped_keyword_override", "severity_floor_trapped")
+    ]
+    if applied_safety:
+        parts.append(f"safety rule applied: {', '.join(applied_safety)}")
     return (
         "; ".join(parts)
         + f". Model confidence {analysis.confidence:.0%}; "
@@ -111,6 +117,8 @@ def to_backend_dict(
         "needs": analysis.needs,
         "language": analysis.language,
         "confidence": analysis.confidence,
+        "flags": analysis.flags,
+        "needs_review": bool(analysis.confidence < 0.5 or analysis.flags),
     }
 
 

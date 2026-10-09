@@ -3,11 +3,23 @@
 A report, not a gate: the exit code is always 0."""
 import argparse
 import json
+from datetime import datetime, timezone
 from pathlib import Path
-from disasterlens_ai import analyze_report, find_duplicate
+from disasterlens_ai import analyze_report, config, find_duplicate
 from disasterlens_ai.schemas import IncidentRef
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+
+
+def _run_info() -> dict:
+    """Provenance for a run, so a stub result can never pass as a live baseline."""
+    return {
+        "mode": "stub" if config.STUB_MODE else "live",
+        "model": config.LLM_MODEL or None,
+        "provider": config.LLM_BASE_URL,
+        "judge_enabled": config.JUDGE_ENABLED,
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
 
 
 def _rate(part: int, whole: int) -> float | None:
@@ -91,6 +103,31 @@ def _duplicates(samples: list[dict], expected: dict, analyses: dict) -> dict:
             "false_positives": sorted(predicted - truth)}
 
 
+def _safety(results: dict) -> dict:
+    """Safety-critical counts plus the sample ids behind each of them.
+
+    ``trapped`` is the set of samples where a rescue should have been flagged;
+    missing one delays a rescue, so that recall is the headline number.
+    """
+    ids = sorted(results)
+    return {
+        "trapped": [sid for sid in ids
+                    if results[sid]["expected"]["people_trapped"] == "yes"],
+        "trapped_caught": [sid for sid in ids
+                           if results[sid]["expected"]["people_trapped"] == "yes"
+                           and results[sid]["got"]["people_trapped"] == "yes"],
+        "trapped_false_alarms": [sid for sid in ids
+                                 if results[sid]["expected"]["people_trapped"] != "yes"
+                                 and results[sid]["got"]["people_trapped"] == "yes"],
+        "severity_under_triage": [sid for sid in ids
+                                   if results[sid]["got"]["severity"]
+                                   < results[sid]["expected"]["severity_min"]],
+        "severity_over_triage": [sid for sid in ids
+                                  if results[sid]["got"]["severity"]
+                                  > results[sid]["expected"]["severity_max"]],
+    }
+
+
 def _failures(results: dict) -> list[str]:
     lines = []
     for sid in sorted(results):
@@ -123,8 +160,17 @@ def main() -> int:
     results = _sample_results(samples, expected, analyses)
     metrics = _summary(results)
     dup = _duplicates(samples, expected, analyses)
+    safety = _safety(results)
+    trapped_recall = _rate(len(safety["trapped_caught"]), len(safety["trapped"]))
 
-    print(f"samples evaluated: {len(samples)}\n")
+    run = _run_info()
+    print(f"samples evaluated: {len(samples)}")
+    print(f"mode: {run['mode']}  model: {run['model'] or '(unset)'}  "
+          f"provider: {run['provider']}  at: {run['generated_at']}")
+    if run["mode"] == "stub":
+        print("WARNING: stub mode (DISASTERLENS_STUB=1) - these numbers are not a "
+              "live model baseline.")
+    print()
     print(f"{'metric':<28} {'rate':>7}  detail")
     print("-" * 52)
     for name, (part, whole) in metrics.items():
@@ -132,6 +178,14 @@ def main() -> int:
     for name in ("precision", "recall"):
         rate, part, whole = dup[name]
         print(f"{'duplicate ' + name:<28} {_fmt(rate):>7}  {part}/{whole}")
+
+    print("\nsafety metrics:")
+    print(f"{'trapped recall':<28} {_fmt(trapped_recall):>7}  "
+          f"{len(safety['trapped_caught'])}/{len(safety['trapped'])}")
+    for name, key in (("trapped false alarms", "trapped_false_alarms"),
+                      ("severity under-triage", "severity_under_triage"),
+                      ("severity over-triage", "severity_over_triage")):
+        print(f"{name:<28} {len(safety[key]):>7}  {safety[key]}")
 
     failures = _failures(results)
     print(f"\nfailures ({len(failures)}):")
@@ -144,10 +198,22 @@ def main() -> int:
 
     if args.out:
         Path(args.out).write_text(json.dumps(
-            {"metrics": {k: {"correct": a, "total": b, "rate": _rate(a, b)}
+            {"run": run,
+             "metrics": {k: {"correct": a, "total": b, "rate": _rate(a, b)}
                          for k, (a, b) in metrics.items()},
              "duplicate": {"precision": dup["precision"][0], "recall": dup["recall"][0],
                            "missed": dup["missed"], "false_positives": dup["false_positives"]},
+             "safety": {
+                 "trapped_recall": {"correct": len(safety["trapped_caught"]),
+                                    "total": len(safety["trapped"]),
+                                    "rate": trapped_recall},
+                 "trapped_false_alarms": {"count": len(safety["trapped_false_alarms"]),
+                                          "sample_ids": safety["trapped_false_alarms"]},
+                 "severity_under_triage": {"count": len(safety["severity_under_triage"]),
+                                           "sample_ids": safety["severity_under_triage"]},
+                 "severity_over_triage": {"count": len(safety["severity_over_triage"]),
+                                          "sample_ids": safety["severity_over_triage"]},
+             },
              "failures": failures, "samples": results},
             ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"\nwrote {args.out}")

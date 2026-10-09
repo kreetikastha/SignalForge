@@ -18,6 +18,33 @@
     const isInMapRegion = (report) => hasCoordinates(report)
       && report.lat >= mapRegion.south && report.lat <= mapRegion.north
       && report.lng >= mapRegion.west && report.lng <= mapRegion.east;
+
+    function normalizePeopleTrapped(value) {
+      const normalized = String(value ?? 'unknown').trim().toLowerCase();
+      if (['yes', 'true', '1', 'confirmed'].includes(normalized)) return 'yes';
+      if (['no', 'false', '0', 'none'].includes(normalized)) return 'no';
+      return 'unknown';
+    }
+    function normalizeRescueStatus(item) {
+      if (item.people_rescued === true) return 'rescued';
+      if (item.people_rescued === false) return 'awaiting';
+      const value = item.rescue_status ?? item.rescue_outcome ?? item.rescueStatus;
+      if (value === undefined || value === null || value === '') return null;
+      const normalized = String(value).trim().toLowerCase().replace(/[\s-]+/g, '_');
+      if (['rescued', 'confirmed_rescued', 'completed', 'safe'].includes(normalized)) return 'rescued';
+      if (['underway', 'in_progress', 'en_route', 'active'].includes(normalized)) return 'underway';
+      if (['not_required', 'no_rescue_required', 'not_needed'].includes(normalized)) return 'not_required';
+      if (['awaiting', 'awaiting_confirmation', 'pending', 'not_yet_confirmed', 'not_rescued'].includes(normalized)) return 'awaiting';
+      return 'unknown';
+    }
+    function rescueOutcome(report) {
+      if (report.rescueStatus === 'rescued') return { label: 'Confirmed rescued', state: 'rescued' };
+      if (report.rescueStatus === 'underway') return { label: 'Response underway', state: 'underway' };
+      if (report.rescueStatus === 'unknown') return { label: 'Unknown', state: 'unknown' };
+      if (report.rescueStatus === 'not_required' || report.peopleTrapped === 'no') return { label: 'No rescue indicated', state: 'not-required' };
+      if (report.peopleTrapped === 'yes') return { label: 'Awaiting confirmation', state: 'awaiting' };
+      return { label: 'Unknown', state: 'unknown' };
+    }
     const markerIcon = (report) => L.divIcon({ className: '', html: `<div class="map-pin ${urgencyClass(report.severity)}"><span>${({ critical: '!', high: 'H', medium: 'M', low: 'L', unknown: '?' })[urgencyClass(report.severity)]}</span></div>`, iconSize: [28, 34], iconAnchor: [14, 30], popupAnchor: [0, -28] });
     let selectedPreviewUrl = null;
 
@@ -150,6 +177,42 @@
       const hasSelection = reports.some((report) => report.id === selectedId);
       document.getElementById('zoomButton').disabled = !hasSelection;
       document.getElementById('copyCoordinatesButton').disabled = !hasSelection || !hasCoordinates(reports.find((report) => report.id === selectedId));
+      const rescueCases = reports.filter((report) => report.peopleTrapped === 'yes' && !['rescued', 'not_required'].includes(report.rescueStatus)).length;
+      document.getElementById('rescueNavCount').textContent = dataAvailable ? String(rescueCases).padStart(2, '0') : '—';
+      renderRescueView(dataAvailable);
+    }
+    function renderRescueView(dataAvailable) {
+      const rescuedCount = reports.filter((report) => report.rescueStatus === 'rescued').length;
+      const trappedCount = reports.filter((report) => report.peopleTrapped === 'yes').length;
+      const awaitingCount = reports.filter((report) => report.rescueStatus === 'awaiting' || (report.peopleTrapped === 'yes' && report.rescueStatus === null)).length;
+      const countText = (count) => dataAvailable ? String(count).padStart(2, '0') : '—';
+      document.getElementById('rescueTrappedCount').textContent = countText(trappedCount);
+      document.getElementById('rescueConfirmedCount').textContent = countText(rescuedCount);
+      document.getElementById('rescueAwaitingCount').textContent = countText(awaitingCount);
+      document.getElementById('rescueRecordCount').textContent = dataAvailable ? String(reports.length).padStart(2, '0') : '—';
+
+      const empty = document.getElementById('rescueEmpty');
+      const tableBody = document.getElementById('rescueTableBody');
+      tableBody.innerHTML = '';
+      if (!dataAvailable || reports.length === 0) {
+        empty.hidden = false;
+        document.getElementById('rescueEmptyTitle').textContent = dataAvailable ? 'No incidents to track' : 'Rescue status not loaded';
+        document.getElementById('rescueEmptyMessage').textContent = dataAvailable
+          ? 'Rescue indicators will appear here when included in an incident report.'
+          : 'Refresh the incident feed to retrieve rescue-related reports.';
+        return;
+      }
+
+      empty.hidden = true;
+      tableBody.innerHTML = reports.map((report) => {
+        const outcome = rescueOutcome(report);
+        const trappedLabel = report.peopleTrapped === 'yes' ? 'Yes' : report.peopleTrapped === 'no' ? 'No' : 'Unknown';
+        return `<tr><td><button class="rescue-incident-link" data-rescue-incident="${escapeHtml(report.id)}">${escapeHtml(report.type)} · ${escapeHtml(report.id)}</button><small>${escapeHtml(report.title)}</small></td><td><span class="rescue-flag rescue-flag--${report.peopleTrapped}">${trappedLabel}</span></td><td><span class="rescue-outcome rescue-outcome--${outcome.state}">${outcome.label}</span></td><td>${escapeHtml(report.location)}</td><td>${escapeHtml(report.time)}</td></tr>`;
+      }).join('');
+      tableBody.querySelectorAll('[data-rescue-incident]').forEach((button) => button.addEventListener('click', () => {
+        selectIncident(button.dataset.rescueIncident, false);
+        document.querySelector('.nav-link[data-view="incidents"]').click();
+      }));
     }
     function selectIncident(id, pan) {
       const report = reports.find((item) => item.id === id);
@@ -244,7 +307,8 @@
           analysisStatus: String(item.analysis_status ?? 'unknown'),
           status: String(item.status ?? 'new').toLowerCase(),
           priorityReason: item.priority_reason ?? null,
-          peopleTrapped: item.people_trapped ?? 'unknown',
+          peopleTrapped: normalizePeopleTrapped(item.people_trapped),
+          rescueStatus: normalizeRescueStatus(item),
           roadBlocked: item.road_blocked ?? 'unknown',
           supportingReports: Number(item.supporting_reports ?? 1),
           description,
@@ -256,13 +320,6 @@
       const status = document.getElementById('apiStatus');
       status.dataset.state = state;
       document.getElementById('apiStatusText').textContent = state === 'error' ? 'Feed paused' : state === 'loading' ? 'Syncing' : 'Feed connected';
-      const sidebarCard = document.getElementById('sidebarApiCard');
-      sidebarCard.dataset.state = state;
-      document.getElementById('sidebarApiMessage').textContent = state === 'connected'
-        ? 'Connected. Incident feed is available.'
-        : state === 'loading'
-          ? 'Syncing incident feed.'
-          : 'Connection interrupted. Refresh to retry.';
       document.getElementById('queueSource').textContent = state === 'connected' ? 'API' : state === 'loading' ? 'Syncing' : 'Feed paused';
     }
     async function loadIncidents(notifyOnError = true) {
@@ -329,7 +386,6 @@
     function openReportDialog() {
       document.getElementById('reportDialog').showModal();
     }
-    document.getElementById('openReport').addEventListener('click', openReportDialog);
     document.addEventListener('click', (event) => {
       if (event.target.closest('[data-open-report]')) openReportDialog();
       const mapAction = event.target.closest('[data-map-action]');
@@ -449,22 +505,20 @@
     const viewContent = {
       overview: ['Situation overview', 'Community reports, organized by location and urgency.'],
       incidents: ['Incident queue', 'Review reports prioritized by reported severity and received time.'],
+      rescues: ['Rescue operations', 'Track reported entrapment and confirmed rescue outcomes.'],
       map: ['Live incident map', 'Explore locations returned by the incident feed.']
     };
     document.querySelectorAll('.nav-link[data-view]').forEach((link) => link.addEventListener('click', (event) => {
       event.preventDefault();
       const view = link.dataset.view;
       document.querySelector('.main').dataset.view = view;
+      document.getElementById('rescueView').hidden = view !== 'rescues';
       document.getElementById('viewTitle').textContent = viewContent[view][0];
       document.getElementById('breadcrumbTitle').textContent = viewContent[view][0];
       document.getElementById('viewSubtitle').textContent = viewContent[view][1];
       activateNavLink(link);
       if (view === 'map') requestAnimationFrame(() => map.invalidateSize());
     }));
-    document.querySelector('.response-link[href="#incidents"]').addEventListener('click', (event) => {
-      event.preventDefault();
-      document.querySelector('.nav-link[data-view="incidents"]').click();
-    });
     document.querySelectorAll('a[href="#reports"]').forEach((link) => link.addEventListener('click', (event) => {
       event.preventDefault();
       const navLink = link.closest('.nav-link');

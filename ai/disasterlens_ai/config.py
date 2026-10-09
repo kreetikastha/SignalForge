@@ -12,8 +12,10 @@ LLM_MODEL = os.getenv("LLM_MODEL", "")
 STUB_MODE = os.getenv("DISASTERLENS_STUB", "0") == "1"
 JUDGE_ENABLED = os.getenv("DISASTERLENS_JUDGE", "0") == "1"
 
-MAX_RETRIES = 2
-REQUEST_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "45"))  # seconds
+MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "1"))
+REQUEST_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "20"))  # seconds
+# Wall-clock budget for ONE report, retries included; this is what bounds POST /reports.
+TOTAL_TIMEOUT = float(os.getenv("LLM_TOTAL_BUDGET", str(REQUEST_TIMEOUT * (MAX_RETRIES + 1))))
 MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "900"))
 DUPLICATE_THRESHOLD = 0.55
 JUDGE_LOW = 0.35
