@@ -1,23 +1,77 @@
 [
   {
     "report": "Bagmati river overflowing near Balkhu bridge, water entering houses, 2 kids stuck on a roof, need boat urgently",
-    "output": {"incident_type": "flood", "location_text": "Balkhu bridge", "severity": 5, "people_affected": 2,
-      "vulnerable_groups": ["children"], "needs": ["rescue", "evacuation"],
+    "output": {
+      "incident_type": "flood",
+      "location_text": "Balkhu bridge",
+      "severity": 5,
+      "people_affected": 2,
+      "people_trapped": "yes",
+      "road_blocked": "unknown",
+      "vulnerable_groups": [
+        "children"
+      ],
+      "needs": [
+        "rescue",
+        "evacuation"
+      ],
       "summary": "River overflow at Balkhu bridge flooding houses with two children stranded on a roof.",
-      "language": "en", "confidence": 0.9}
+      "language": "en",
+      "confidence": 0.9
+    }
   },
   {
     "report": "बनेपामा पहिरो गएर बाटो बन्द भएको छ, गाडी जान सकेको छैन",
-    "output": {"incident_type": "landslide", "location_text": "बनेपा", "severity": 2, "people_affected": null,
-      "vulnerable_groups": [], "needs": ["road_clearing"],
+    "output": {
+      "incident_type": "landslide",
+      "location_text": "बनेपा",
+      "severity": 2,
+      "people_affected": null,
+      "people_trapped": "unknown",
+      "road_blocked": "yes",
+      "vulnerable_groups": [],
+      "needs": [
+        "road_clearing"
+      ],
       "summary": "Landslide has blocked the road at Banepa; vehicles cannot pass.",
-      "language": "ne", "confidence": 0.85}
+      "language": "ne",
+      "confidence": 0.85
+    }
   },
   {
     "report": "smoke coming from somewhere near the market i think",
-    "output": {"incident_type": "fire", "location_text": "near the market", "severity": 2, "people_affected": null,
-      "vulnerable_groups": [], "needs": [],
+    "output": {
+      "incident_type": "fire",
+      "location_text": "near the market",
+      "severity": 2,
+      "people_affected": null,
+      "people_trapped": "unknown",
+      "road_blocked": "unknown",
+      "vulnerable_groups": [],
+      "needs": [],
       "summary": "Unconfirmed smoke reported near a market, location unclear.",
-      "language": "en", "confidence": 0.3}
+      "language": "en",
+      "confidence": 0.3
+    }
+  },
+  {
+    "report": "Building collapsed after the earthquake in Chabahil, I can hear people shouting under the rubble, road is blocked by debris",
+    "output": {
+      "incident_type": "building_collapse",
+      "location_text": "Chabahil",
+      "severity": 5,
+      "people_affected": null,
+      "people_trapped": "yes",
+      "road_blocked": "yes",
+      "vulnerable_groups": [],
+      "needs": [
+        "rescue",
+        "medical",
+        "road_clearing"
+      ],
+      "summary": "Collapsed building in Chabahil with people audibly trapped under rubble and the road blocked by debris.",
+      "language": "en",
+      "confidence": 0.9
+    }
   }
 ]
