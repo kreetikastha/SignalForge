@@ -10,7 +10,8 @@ def _get_client() -> OpenAI:
     if _client is None:
         if not config.LLM_API_KEY or not config.LLM_MODEL:
             raise RuntimeError("Set LLM_API_KEY and LLM_MODEL in ai/.env (or DISASTERLENS_STUB=1).")
-        _client = OpenAI(base_url=config.LLM_BASE_URL, api_key=config.LLM_API_KEY)
+        _client = OpenAI(base_url=config.LLM_BASE_URL, api_key=config.LLM_API_KEY,
+                         timeout=config.REQUEST_TIMEOUT, max_retries=0)
     return _client
 
 
@@ -25,5 +26,6 @@ def chat(system: str, user_text: str, image: bytes | None = None,
     messages = [{"role": "system", "content": system}, *(history or []),
                 {"role": "user", "content": content if image else user_text}]
     resp = _get_client().chat.completions.create(
-        model=config.LLM_MODEL, messages=messages, temperature=0.1)
+        model=config.LLM_MODEL, messages=messages, temperature=0.1,
+        max_tokens=config.MAX_TOKENS)
     return resp.choices[0].message.content or ""

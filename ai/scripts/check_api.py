@@ -1,5 +1,6 @@
 """Sanity-check the LLM endpoint. Run from ai/:  python scripts/check_api.py [image.jpg]"""
 import sys
+import time
 from disasterlens_ai import analyze_report, config
 from disasterlens_ai.client import chat
 
@@ -11,10 +12,12 @@ def main() -> int:
         return 1
 
     print("\n[1] raw call ...")
+    t0 = time.time()
     try:
         print("   ->", chat("Reply with one word.", "Say OK").strip()[:80])
+        print(f"   ({time.time() - t0:.1f}s)")
     except Exception as e:
-        print(f"FAIL: {type(e).__name__}: {e}")
+        print(f"FAIL after {time.time() - t0:.0f}s: {type(e).__name__}: {e}")
         return 1
 
     print("\n[2] structured analysis ...")

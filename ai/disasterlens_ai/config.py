@@ -12,4 +12,6 @@ LLM_MODEL = os.getenv("LLM_MODEL", "")
 STUB_MODE = os.getenv("DISASTERLENS_STUB", "0") == "1"
 
 MAX_RETRIES = 2
+REQUEST_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "45"))  # seconds
+MAX_TOKENS = 600
 DUPLICATE_THRESHOLD = 0.55
