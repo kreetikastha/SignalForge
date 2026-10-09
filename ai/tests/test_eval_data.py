@@ -32,13 +32,25 @@ def test_ids_match_exactly():
     assert set(ids) == set(_expected())
 
 
-def test_at_least_30_samples():
-    assert len(_samples()) >= 30
+def test_at_least_54_samples():
+    assert len(_samples()) >= 54
 
 
-def test_at_least_8_devanagari_samples():
+def test_at_least_18_devanagari_samples():
     count = sum(1 for s in _samples() if DEVANAGARI.search(s["text"]))
+    assert count >= 18
+
+
+def test_at_least_8_people_trapped():
+    count = sum(1 for exp in _expected().values() if exp.get("people_trapped") == "yes")
     assert count >= 8
+
+
+def test_dup_groups_appear_twice():
+    expected = _expected()
+    for g in ["g1", "g2", "g3", "g4"]:
+        matches = [sid for sid, exp in expected.items() if exp.get("dup_group") == g]
+        assert len(matches) == 2, f"{g} should appear exactly twice, got {matches}"
 
 
 def test_severity_ranges_valid():
