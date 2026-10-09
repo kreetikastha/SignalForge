@@ -1,10 +1,15 @@
 import re
+import unicodedata
 from . import config
 from .schemas import IncidentMatch, IncidentRef, ReportAnalysis
 
 
 def _tokens(s: str | None) -> set[str]:
-    return set(re.findall(r"\w+", (s or "").lower()))
+    # NFC keeps Devanagari vowel signs as combining marks; \w alone drops them.
+    # The class adds the Devanagari block but stops before danda U+0964/U+0965
+    # so sentence-ending '।' never glues to a word.
+    s = unicodedata.normalize("NFC", s or "")
+    return set(re.findall(r"[\w\u0900-\u0963\u0966-\u097F]+", s.lower()))
 
 
 def _jaccard(a: set[str], b: set[str]) -> float:
