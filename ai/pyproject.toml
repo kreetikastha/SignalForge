@@ -1,0 +1,18 @@
+[project]
+name = "disasterlens-ai"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = ["pydantic>=2", "openai>=1.40", "python-dotenv>=1.0"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["disasterlens_ai*"]
+
+[tool.setuptools.package-data]
+disasterlens_ai = ["prompts/*"]
