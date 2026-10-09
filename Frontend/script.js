@@ -1,8 +1,8 @@
     const apiBaseUrl = 'http://127.0.0.1:8001';
     let reports = [];
     let loadingIncidents = true;
-    const map = L.map('map', { zoomControl: false, scrollWheelZoom: false }).setView([20, 0], 2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+    const map = L.map('map', { zoomControl: false, scrollWheelZoom: false }).setView([27.7172, 85.324], 10);
+    const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     const markerLayer = L.layerGroup().addTo(map);
     const markerById = new Map();
@@ -34,8 +34,14 @@
       const mapEmpty = document.getElementById('mapEmpty');
       mapEmpty.hidden = mappedReports.length > 0;
       const apiFailed = document.getElementById('apiStatus').dataset.state === 'error';
-      document.getElementById('mapEmptyTitle').textContent = apiFailed ? 'API unavailable' : reports.length ? 'No coordinates returned' : 'Waiting for incident locations';
-      document.getElementById('mapEmptyDescription').textContent = apiFailed ? 'Refresh to retry loading incident locations.' : reports.length ? 'The API response has no usable latitude and longitude.' : 'GPS coordinates from the API will appear here.';
+      document.getElementById('map').dataset.state = apiFailed ? 'error' : mappedReports.length ? 'ready' : loadingIncidents ? 'loading' : 'empty';
+      document.getElementById('mapEmptyTitle').textContent = reports.length ? 'No coordinates returned' : 'No incidents yet';
+      document.getElementById('mapEmptyDescription').textContent = apiFailed ? 'The Kathmandu Valley map is ready for new report locations.' : reports.length ? 'The incident feed has no usable latitude and longitude.' : 'New report locations will appear on the map.';
+      document.getElementById('map').classList.toggle('map-has-data', mappedReports.length > 0);
+      const mapAction = document.getElementById('mapEmptyAction');
+      mapAction.dataset.mapAction = apiFailed ? 'retry' : 'report';
+      mapAction.innerHTML = apiFailed ? '<i data-lucide="refresh-cw"></i> Refresh feed' : '<i data-lucide="plus"></i> Add report';
+      if (window.lucide) lucide.createIcons();
       markerLayer.clearLayers();
       markerById.clear();
       mappedReports.forEach((report) => {
@@ -49,33 +55,49 @@
     function renderQueue() {
       const list = document.getElementById('incidentList');
       const shown = visibleReports();
-      list.innerHTML = shown.length ? shown.map((report) => {
+      list.classList.toggle('is-empty', shown.length === 0);
+      let queueContent;
+      if (shown.length) {
+        queueContent = shown.map((report) => {
         const meta = [report.time, report.analysisStatus ? `Analysis: ${report.analysisStatus}` : null, report.confidence === null ? null : `${report.confidence}% confidence`, report.duplicate === true ? 'Possible duplicate' : null].filter(Boolean);
         return `<button class="incident-row ${report.id === selectedId ? 'selected' : ''}" data-id="${escapeHtml(report.id)}" aria-label="${escapeHtml(report.type)}, ${escapeHtml(report.severity)} severity, ${escapeHtml(report.location)}"><div class="incident-topline"><span class="incident-type"><i data-lucide="${iconFor(report.type)}"></i>${escapeHtml(report.type)}</span><span class="severity ${urgencyClass(report.severity)}">${escapeHtml(report.severity)}</span></div><div class="incident-location">${escapeHtml(report.title)} · ${escapeHtml(report.location)}</div><div class="incident-meta">${meta.map((item) => `<span>${escapeHtml(item)}</span>`).join('<span aria-hidden="true">·</span>')}</div></button>`;
-      }).join('') : loadingIncidents ? '<div class="empty-state"><strong>Loading incidents</strong><span>Connecting to the local incident API.</span></div>' : reports.length ? '<div class="empty-state"><strong>No matching incidents</strong><span>Try another priority filter.</span></div>' : '<div class="empty-state"><span class="empty-state-icon"><i data-lucide="inbox"></i></span><strong>No incidents returned</strong><span>Submitted incidents will appear here when available from the API.</span></div>';
+        }).join('');
+      } else if (loadingIncidents) {
+        queueContent = '<div class="empty-state"><strong>Loading incidents</strong><span>Connecting to the incident API.</span></div>';
+      } else if (document.getElementById('apiStatus').dataset.state === 'error') {
+        queueContent = '<div class="empty-state"><span class="empty-state-icon"><i data-lucide="radio"></i></span><strong>No incidents to show</strong><span>Refresh the feed to check for new reports.</span><button class="empty-state-action" data-retry-api><i data-lucide="refresh-cw"></i> Refresh feed</button></div>';
+      } else if (reports.length) {
+        queueContent = '<div class="empty-state"><strong>No matching incidents</strong><span>Try another priority filter.</span></div>';
+      } else {
+        queueContent = '<div class="empty-state"><span class="empty-state-icon"><i data-lucide="inbox"></i></span><strong>No incidents in feed</strong><span>New submissions will appear here when the backend returns them.</span><button class="empty-state-action" data-open-report><i data-lucide="plus"></i> Submit a report</button></div>';
+      }
+      list.innerHTML = queueContent;
       list.querySelectorAll('.incident-row').forEach((row) => row.addEventListener('click', () => selectIncident(row.dataset.id, true)));
       if (window.lucide) lucide.createIcons();
       updateCounts();
     }
     function updateCounts() {
+      const apiState = document.getElementById('apiStatus').dataset.state;
+      const dataAvailable = apiState === 'connected';
+      const countText = (value) => dataAvailable ? String(value).padStart(2, '0') : '—';
       const urgent = reports.filter((report) => ['critical', 'high'].includes(report.severity)).length;
       const open = reports.filter((report) => !['resolved', 'closed'].includes(report.status)).length;
       const duplicateAvailability = reports.some((report) => report.duplicate !== null);
       const allDuplicateDataAvailable = reports.every((report) => report.duplicate !== null);
       const duplicates = reports.filter((report) => report.duplicate === true).length;
-      document.getElementById('openCount').textContent = String(open).padStart(2, '0');
-      document.getElementById('urgentCount').textContent = String(urgent).padStart(2, '0');
-      document.getElementById('duplicateCount').textContent = reports.length && !allDuplicateDataAvailable ? '—' : String(duplicates).padStart(2, '0');
-      document.getElementById('queueCount').textContent = String(reports.length).padStart(2, '0');
-      document.getElementById('sidebarCount').textContent = String(reports.length).padStart(2, '0');
-      document.getElementById('reportCount').textContent = String(reports.length).padStart(2, '0');
+      document.getElementById('openCount').textContent = countText(open);
+      document.getElementById('urgentCount').textContent = countText(urgent);
+      document.getElementById('duplicateCount').textContent = !dataAvailable || (reports.length && !allDuplicateDataAvailable) ? '—' : countText(duplicates);
+      document.getElementById('queueCount').textContent = countText(reports.length);
+      document.getElementById('sidebarCount').textContent = countText(reports.length);
+      document.getElementById('reportCount').textContent = countText(reports.length);
       const mappedCount = reports.filter(hasCoordinates).length;
-      document.getElementById('mapStatus').textContent = mappedCount ? `${mappedCount} of ${reports.length} incidents have coordinates` : reports.length ? 'No coordinates in the incident feed' : 'Waiting for incident locations';
-      document.getElementById('queueDataStatus').textContent = loadingIncidents ? 'Loading…' : `${reports.length} incident${reports.length === 1 ? '' : 's'}`;
-      const hasReports = reports.length > 0;
+      document.getElementById('mapStatus').textContent = apiState === 'error' ? 'Kathmandu Valley · no pins' : mappedCount ? `${mappedCount} of ${reports.length} incidents have coordinates` : reports.length ? 'No coordinates in the incident feed' : 'Kathmandu Valley · no pins';
+      document.getElementById('queueDataStatus').textContent = loadingIncidents ? 'Loading…' : apiState === 'error' ? 'Unavailable' : `${reports.length} incident${reports.length === 1 ? '' : 's'}`;
+      const hasReports = dataAvailable && reports.length > 0;
       document.getElementById('sortButton').disabled = !hasReports;
       ['locateButton', 'mapLayer'].forEach((id) => { document.getElementById(id).disabled = !mappedCount; });
-      document.querySelector('[data-filter="duplicate"]').disabled = !duplicateAvailability;
+      document.querySelector('[data-filter="duplicate"]').disabled = !dataAvailable || !duplicateAvailability;
       const hasSelection = reports.some((report) => report.id === selectedId);
       document.getElementById('zoomButton').disabled = !hasSelection;
       document.getElementById('copyCoordinatesButton').disabled = !hasSelection || !hasCoordinates(reports.find((report) => report.id === selectedId));
@@ -160,12 +182,19 @@
     function setApiStatus(state, message) {
       const status = document.getElementById('apiStatus');
       status.dataset.state = state;
-      document.getElementById('apiStatusText').textContent = message;
-      document.getElementById('queueSource').textContent = state === 'connected' ? 'API' : state === 'loading' ? 'Connecting' : 'API unavailable';
+      document.getElementById('apiStatusText').textContent = state === 'error' ? 'Feed paused' : state === 'loading' ? 'Syncing' : 'Feed connected';
+      const sidebarCard = document.getElementById('sidebarApiCard');
+      sidebarCard.dataset.state = state;
+      document.getElementById('sidebarApiMessage').textContent = state === 'connected'
+        ? 'Connected. Incident feed is available.'
+        : state === 'loading'
+          ? 'Syncing incident feed.'
+          : 'Connection interrupted. Refresh to retry.';
+      document.getElementById('queueSource').textContent = state === 'connected' ? 'API' : state === 'loading' ? 'Syncing' : 'Feed paused';
     }
     async function loadIncidents(notifyOnError = true) {
       loadingIncidents = true;
-      setApiStatus('loading', 'Connecting to API');
+      setApiStatus('loading', 'Syncing');
       renderQueue();
       try {
         const response = await fetch(`${apiBaseUrl}/incidents`, { headers: { Accept: 'application/json' } });
@@ -186,11 +215,11 @@
         }
       } catch (error) {
         loadingIncidents = false;
-        setApiStatus('error', 'API connection failed');
-        document.getElementById('queueSource').textContent = 'API error';
+        setApiStatus('error', 'Feed paused');
+        document.getElementById('queueSource').textContent = 'Feed paused';
         renderMarkers();
         renderQueue();
-        if (notifyOnError) notify(`Could not load incidents: ${error.message}. Check that the API is running and allows this page origin (CORS).`);
+        if (notifyOnError) notify(`Could not refresh the incident feed: ${error.message}.`);
       }
     }
     function notify(message) {
@@ -230,6 +259,9 @@
     document.getElementById('openReport').addEventListener('click', openReportDialog);
     document.addEventListener('click', (event) => {
       if (event.target.closest('[data-open-report]')) openReportDialog();
+      const mapAction = event.target.closest('[data-map-action]');
+      if (mapAction?.dataset.mapAction === 'retry' || event.target.closest('[data-retry-api]')) loadIncidents();
+      else if (mapAction?.dataset.mapAction === 'report') openReportDialog();
     });
     document.getElementById('closeDialog').addEventListener('click', () => document.getElementById('reportDialog').close());
     document.getElementById('cancelDialog').addEventListener('click', () => document.getElementById('reportDialog').close());
@@ -319,14 +351,18 @@
       const view = link.dataset.view;
       document.querySelector('.main').dataset.view = view;
       document.getElementById('viewTitle').textContent = viewContent[view][0];
+      document.getElementById('breadcrumbTitle').textContent = viewContent[view][0];
       document.getElementById('viewSubtitle').textContent = viewContent[view][1];
       activateNavLink(link);
       if (view === 'map') requestAnimationFrame(() => map.invalidateSize());
     }));
+    document.querySelector('.response-link[href="#incidents"]').addEventListener('click', (event) => {
+      event.preventDefault();
+      document.querySelector('.nav-link[data-view="incidents"]').click();
+    });
     document.querySelectorAll('a[href="#reports"]').forEach((link) => link.addEventListener('click', (event) => {
       event.preventDefault();
       const navLink = link.closest('.nav-link');
-      if (navLink) activateNavLink(navLink);
       openReportDialog();
     }));
     renderMarkers();

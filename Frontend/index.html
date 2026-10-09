@@ -27,21 +27,21 @@
         <a class="nav-link" href="#reports" title="Report intake" aria-label="Open report intake"><i data-lucide="inbox"></i><span>Report intake</span></a>
       </nav>
       <div class="side-bottom">
-        <div class="response-card">
-          <div class="response-title"><span>Data connection</span><span class="response-dot"></span></div>
-          <p>Incident feed status is shown in the header.</p>
-          <a class="response-link" href="#incidents">Open incident queue <i data-lucide="arrow-up-right"></i></a>
+        <div class="response-card" id="sidebarApiCard" data-state="loading">
+          <div class="response-title"><span>Incident API</span><span class="response-dot" id="sidebarApiDot"></span></div>
+          <p id="sidebarApiMessage">Checking backend availability.</p>
+          <a class="response-link" href="#incidents">View incident queue <i data-lucide="arrow-up-right"></i></a>
         </div>
         <div class="side-footer">
-          <div class="avatar">DO</div>
-          <div><div class="user-name">Demo operator</div><div class="user-role">Local preview</div></div>
+          <div class="avatar"><i data-lucide="shield-check"></i></div>
+          <div><div class="user-name">Response workspace</div><div class="user-role">Incident operations</div></div>
         </div>
       </div>
     </aside>
 
     <main class="main" id="overview" data-view="overview">
       <header class="topbar">
-        <div class="crumb">Operations <span aria-hidden="true">/</span> <strong>Situation overview</strong></div>
+        <div class="crumb">Operations <span aria-hidden="true">/</span> <strong id="breadcrumbTitle">Operational overview</strong></div>
         <div class="top-actions">
           <div class="live-pill" id="apiStatus" data-state="loading"><span class="live-dot"></span><span id="apiStatusText">Connecting to API</span></div>
           <button class="icon-button" id="refreshButton" aria-label="Refresh incident data" title="Refresh"><i data-lucide="refresh-cw"></i></button>
@@ -51,28 +51,11 @@
 
       <section class="page-heading">
         <div>
-          <div class="eyebrow"><i data-lucide="radio"></i> Regional situation room <span class="eyebrow-tag">LOCAL PREVIEW</span></div>
-          <h1 id="viewTitle">Situation overview</h1>
-          <div class="heading-subtitle" id="viewSubtitle">Community reports, organized by location and urgency.</div>
+          <div class="eyebrow"><i data-lucide="radio"></i> Emergency operations</div>
+          <h1 id="viewTitle">Operational overview</h1>
+          <div class="heading-subtitle" id="viewSubtitle">Incoming incidents prioritized for responder review.</div>
         </div>
         <button class="primary-button" id="openReport"><i data-lucide="plus"></i> Add report</button>
-      </section>
-
-      <section class="intake-banner" aria-label="Report intake status">
-        <div class="intake-copy">
-          <span class="intake-status"><span class="intake-status-dot"></span> API-POWERED INTAKE</span>
-          <h2>Every report enters one response picture.</h2>
-          <p>Submit a community observation to the backend and follow its analysis status, severity, and coordinates here.</p>
-          <button class="intake-action" data-open-report><i data-lucide="arrow-up-right"></i> Submit a report</button>
-        </div>
-        <div class="workflow" aria-label="Local report workflow">
-          <div class="workflow-step"><span class="workflow-index">STEP 01</span><i data-lucide="messages-square"></i><strong>Report intake</strong><small>POST /reports</small></div>
-          <span class="workflow-connector"></span>
-          <div class="workflow-step"><span class="workflow-index">STEP 02</span><i data-lucide="scan-search"></i><strong>Mock analysis</strong><small>Backend keyword triage</small></div>
-          <span class="workflow-connector"></span>
-          <div class="workflow-step"><span class="workflow-index">STEP 03</span><i data-lucide="map-pinned"></i><strong>Incident feed</strong><small>GET /incidents</small></div>
-        </div>
-        <div class="intake-watermark" aria-hidden="true">DL</div>
       </section>
 
       <section class="metrics" aria-label="Incident summary">
@@ -88,7 +71,7 @@
             <div><h2 class="panel-title">Incident map</h2><div class="panel-kicker" id="mapStatus">Waiting for incident locations</div></div>
             <div class="map-tools"><select class="map-select" id="mapLayer" aria-label="Map display"><option value="reports">Report locations</option><option value="heat">Urgency view</option></select><button class="icon-button" id="locateButton" title="Fit all incidents" aria-label="Fit all incidents"><i data-lucide="scan"></i></button></div>
           </div>
-          <div id="map" aria-label="Map showing incident locations"><div class="map-empty" id="mapEmpty"><span class="map-empty-icon"><i data-lucide="map-pin"></i></span><strong id="mapEmptyTitle">Waiting for incident locations</strong><span id="mapEmptyDescription">GPS coordinates from the API will appear here.</span><button class="map-empty-action" data-open-report>Add a report <i data-lucide="arrow-right"></i></button></div></div>
+          <div id="map" aria-label="Map showing incident locations"><div class="map-empty" id="mapEmpty"><span class="map-empty-icon"><i data-lucide="map-pin"></i></span><strong id="mapEmptyTitle">Waiting for incident locations</strong><span id="mapEmptyDescription">GPS coordinates from the API will appear here.</span><button class="map-empty-action" id="mapEmptyAction" data-map-action="report"><i data-lucide="plus"></i> Add report</button></div></div>
           <div class="map-legend"><span class="legend-item"><span class="legend-dot"></span> Critical</span><span class="legend-item"><span class="legend-dot amber"></span> High</span><span class="legend-item"><span class="legend-dot green"></span> Medium</span><span class="legend-item"><span class="legend-dot low"></span> Low</span><span class="legend-item"><span class="legend-dot unknown"></span> Unknown</span><span class="legend-note">API coordinates</span></div>
         </article>
 
