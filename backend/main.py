@@ -188,17 +188,27 @@ def _normalize_ai_result(
     if not isinstance(result, dict):
         result = {}
 
-    fallback = _infer_from_text(original_text)
-    incident_type = result.get("incident_type") or result.get("incidentType") or fallback["incident_type"]
+    # A completed result comes from adapter.analyze_for_backend(): it is the
+    # model's structured decision and is taken verbatim. Keyword inference is
+    # ONLY a fallback for mock/failed results (or an exception payload with no
+    # fields) - never an override, otherwise a model severity 2 / type "other"
+    # gets clobbered by the mere presence of "landslide" or "fire".
+    status = str(result.get("analysis_status") or "").strip().lower()
+    completed = status == "completed"
+    fallback = None if completed else _infer_from_text(original_text)
+    analysis_status = "completed" if completed else "mock"
+
+    incident_type = result.get("incident_type") or result.get("incidentType")
     if isinstance(incident_type, Enum):
         incident_type = incident_type.value
-    incident_type = str(incident_type).strip().lower().replace(" ", "_")
-    if incident_type in {"other", "unknown", ""}:
-        incident_type = fallback["incident_type"]
+    incident_type = str(incident_type or "").strip().lower().replace(" ", "_")
+    if incident_type in {"", "unknown"}:
+        # Missing value only: keywords may fill it in for mock results, while
+        # a completed analysis that says "other" keeps "other".
+        incident_type = (fallback["incident_type"] if fallback else "other") or "other"
 
-    severity_value = result.get("severity")
-    normalized_severity = _normalize_severity(severity_value)
-    if normalized_severity in {"unknown", "info", "low", "medium"} and fallback["severity"] in {"high", "critical"}:
+    normalized_severity = _normalize_severity(result.get("severity"))
+    if fallback is not None and normalized_severity == "unknown":
         normalized_severity = fallback["severity"]
 
     people_trapped = result.get("people_trapped") or result.get("people_trapped_by_ai")
@@ -209,7 +219,7 @@ def _normalize_ai_result(
         text_tokens = " ".join(str(item).lower() for item in needs)
         people_trapped = "yes" if any(
             keyword in text_tokens for keyword in ["rescue", "trapped", "stuck", "medical"]
-        ) else fallback["people_trapped"]
+        ) else (fallback["people_trapped"] if fallback else "unknown")
 
     road_blocked = result.get("road_blocked") or result.get("road_blockage")
     if road_blocked is None:
@@ -223,7 +233,7 @@ def _normalize_ai_result(
         ):
             road_blocked = "yes"
         else:
-            road_blocked = fallback["road_blocked"]
+            road_blocked = fallback["road_blocked"] if fallback else "unknown"
 
     ai_summary = (
         result.get("ai_summary")
@@ -233,19 +243,15 @@ def _normalize_ai_result(
             if original_text else "Preliminary assessment completed."
         )
     )
-    priority_reason = result.get("priority_reason")
-    if (
-        priority_reason
-        and normalized_severity != _normalize_severity(severity_value)
-    ):
-        priority_reason = None
-    priority_reason = priority_reason or (
+    # Keep adapter.py's priority_reason verbatim - it carries the safety flags
+    # ("safety rule applied: trapped_keyword_override"). A generic placeholder
+    # is only generated when nobody supplied one.
+    priority_reason = str(result.get("priority_reason") or (
         "Severity is "
         + normalized_severity
         + " based on the report details. Human verification is recommended "
         "before dispatch."
-    )
-    analysis_status = result.get("analysis_status") or "completed"
+    ))
     people_trapped = _normalize_report_flag(people_trapped)
     road_blocked = _normalize_report_flag(road_blocked)
 
