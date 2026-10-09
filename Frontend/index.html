@@ -23,15 +23,11 @@
       <nav class="nav" aria-label="Main navigation">
         <a class="nav-link active" href="#overview" data-view="overview" title="Overview"><i data-lucide="layout-dashboard"></i><span>Overview</span></a>
         <a class="nav-link" href="#incidents" data-view="incidents" title="Incidents"><i data-lucide="triangle-alert"></i><span>Incidents</span><span class="nav-count" id="sidebarCount">00</span></a>
+        <a class="nav-link" href="#rescues" data-view="rescues" title="Rescue status"><i data-lucide="life-buoy"></i><span>Rescues</span><span class="nav-count" id="rescueNavCount">—</span></a>
         <a class="nav-link" href="#map" data-view="map" title="Live map"><i data-lucide="map"></i><span>Live map</span></a>
         <a class="nav-link" href="#reports" title="Report intake" aria-label="Open report intake"><i data-lucide="inbox"></i><span>Report intake</span></a>
       </nav>
       <div class="side-bottom">
-        <div class="response-card" id="sidebarApiCard" data-state="loading">
-          <div class="response-title"><span>Incident API</span><span class="response-dot" id="sidebarApiDot"></span></div>
-          <p id="sidebarApiMessage">Checking backend availability.</p>
-          <a class="response-link" href="#incidents">View incident queue <i data-lucide="arrow-up-right"></i></a>
-        </div>
         <div class="side-footer">
           <div class="avatar"><i data-lucide="shield-check"></i></div>
           <div><div class="user-name">Response workspace</div><div class="user-role">Incident operations</div></div>
@@ -55,7 +51,6 @@
           <h1 id="viewTitle">Operational overview</h1>
           <div class="heading-subtitle" id="viewSubtitle">Incoming incidents prioritized for responder review.</div>
         </div>
-        <button class="primary-button" id="openReport"><i data-lucide="plus"></i> Add report</button>
       </section>
 
       <section class="metrics" aria-label="Incident summary">
@@ -82,6 +77,24 @@
           </div>
           <div class="incident-list" id="incidentList" aria-live="polite"></div>
           <div class="queue-footer"><span><strong id="queueSource">API</strong> · incident feed</span><span id="queueDataStatus">Loading…</span></div>
+        </article>
+      </section>
+
+      <section class="rescue-view" id="rescueView" aria-label="Rescue status dashboard" hidden>
+        <div class="rescue-metrics">
+          <article class="rescue-stat rescue-stat--trapped"><span class="rescue-stat-label">Reported trapped</span><strong id="rescueTrappedCount">—</strong><span>reports flagging trapped people</span></article>
+          <article class="rescue-stat rescue-stat--confirmed"><span class="rescue-stat-label">Confirmed rescued</span><strong id="rescueConfirmedCount">—</strong><span>explicit outcome reported</span></article>
+          <article class="rescue-stat rescue-stat--awaiting"><span class="rescue-stat-label">Awaiting confirmation</span><strong id="rescueAwaitingCount">—</strong><span>rescue outcome not reported</span></article>
+        </div>
+        <article class="panel rescue-panel">
+          <div class="panel-head"><div><h2 class="panel-title">People &amp; rescue outcomes</h2><div class="panel-kicker">Outcome is marked rescued only when confirmed in incident data.</div></div><span class="queue-count" id="rescueRecordCount">—</span></div>
+          <div class="rescue-table-wrap">
+            <table class="rescue-table">
+              <thead><tr><th>Incident</th><th>People trapped</th><th>Rescue outcome</th><th>Location</th><th>Reported</th></tr></thead>
+              <tbody id="rescueTableBody"></tbody>
+            </table>
+            <div class="rescue-empty" id="rescueEmpty" hidden><span class="empty-state-icon"><i data-lucide="life-buoy"></i></span><strong id="rescueEmptyTitle">No rescue incidents yet</strong><span id="rescueEmptyMessage">Rescue-related reports will appear here.</span></div>
+          </div>
         </article>
       </section>
 
