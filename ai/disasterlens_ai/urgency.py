@@ -7,5 +7,9 @@ def score_urgency(analysis: ReportAnalysis, duplicate_count: int = 1) -> int:
         score += 10
     if analysis.vulnerable_groups:
         score += 10
+    if analysis.people_trapped == "yes":
+        score += 12
+    if analysis.road_blocked == "yes":
+        score += 6
     score += min(max(duplicate_count - 1, 0), 5) * 4    # corroboration, max +20
     return min(score, 100)
