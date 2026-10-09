@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 from typing import Literal, Optional
 from pydantic import BaseModel, Field
@@ -34,6 +35,9 @@ class IncidentRef(BaseModel):
     incident_type: IncidentType
     location_text: Optional[str] = None
     summary: str = ""
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    received_at: Optional[datetime] = None
 
 
 class IncidentMatch(BaseModel):
