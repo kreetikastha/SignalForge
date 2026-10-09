@@ -91,6 +91,28 @@ def test_vehicle_stopped_does_not_infer_trapped_people(monkeypatch):
     assert result["road_blocked"] == "yes"
 
 
+def test_explain_urgency_shows_mass_casualty_tier():
+    mass = ReportAnalysis(
+        incident_type=IncidentType.FLOOD,
+        severity=4,
+        summary="Neighbourhood under water.",
+        confidence=0.9,
+        people_affected=45,
+    )
+    assert "mass casualty alert: ~45 people affected" in adapter.explain_urgency(mass)
+
+    small = ReportAnalysis(
+        incident_type=IncidentType.FLOOD,
+        severity=4,
+        summary="Two houses flooded.",
+        confidence=0.9,
+        people_affected=8,
+    )
+    reason = adapter.explain_urgency(small)
+    assert "mass casualty alert" not in reason
+    assert "~8 people affected" in reason
+
+
 def test_backend_service_falls_back_when_ai_analysis_fails(monkeypatch, caplog):
     def fail_analysis(description):
         assert description == "Smoke near the market"

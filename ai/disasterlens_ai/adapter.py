@@ -49,7 +49,12 @@ def explain_urgency(
     if trapped == "yes":
         parts.append("people reported trapped")
     if analysis.people_affected:
-        parts.append(f"~{analysis.people_affected} people affected")
+        if analysis.people_affected > 20:
+            parts.append(
+                f"mass casualty alert: ~{analysis.people_affected} people affected"
+            )
+        else:
+            parts.append(f"~{analysis.people_affected} people affected")
     if analysis.vulnerable_groups:
         parts.append("vulnerable: " + ", ".join(analysis.vulnerable_groups))
     if blocked == "yes":
