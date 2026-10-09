@@ -3,11 +3,23 @@
 A report, not a gate: the exit code is always 0."""
 import argparse
 import json
+from datetime import datetime, timezone
 from pathlib import Path
-from disasterlens_ai import analyze_report, find_duplicate
+from disasterlens_ai import analyze_report, config, find_duplicate
 from disasterlens_ai.schemas import IncidentRef
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+
+
+def _run_info() -> dict:
+    """Provenance for a run, so a stub result can never pass as a live baseline."""
+    return {
+        "mode": "stub" if config.STUB_MODE else "live",
+        "model": config.LLM_MODEL or None,
+        "provider": config.LLM_BASE_URL,
+        "judge_enabled": config.JUDGE_ENABLED,
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
 
 
 def _rate(part: int, whole: int) -> float | None:
@@ -151,7 +163,14 @@ def main() -> int:
     safety = _safety(results)
     trapped_recall = _rate(len(safety["trapped_caught"]), len(safety["trapped"]))
 
-    print(f"samples evaluated: {len(samples)}\n")
+    run = _run_info()
+    print(f"samples evaluated: {len(samples)}")
+    print(f"mode: {run['mode']}  model: {run['model'] or '(unset)'}  "
+          f"provider: {run['provider']}  at: {run['generated_at']}")
+    if run["mode"] == "stub":
+        print("WARNING: stub mode (DISASTERLENS_STUB=1) - these numbers are not a "
+              "live model baseline.")
+    print()
     print(f"{'metric':<28} {'rate':>7}  detail")
     print("-" * 52)
     for name, (part, whole) in metrics.items():
@@ -179,7 +198,8 @@ def main() -> int:
 
     if args.out:
         Path(args.out).write_text(json.dumps(
-            {"metrics": {k: {"correct": a, "total": b, "rate": _rate(a, b)}
+            {"run": run,
+             "metrics": {k: {"correct": a, "total": b, "rate": _rate(a, b)}
                          for k, (a, b) in metrics.items()},
              "duplicate": {"precision": dup["precision"][0], "recall": dup["recall"][0],
                            "missed": dup["missed"], "false_positives": dup["false_positives"]},
