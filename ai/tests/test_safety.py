@@ -347,10 +347,9 @@ def test_kept_stuck_variants_still_trigger(text):
 
 # --- person-subject / place senses of "stuck" (regression: dead-provider fallback
 # --- must still catch "2 children stuck on roof") --------------------------------
-import pytest as _pytest
 
 
-@_pytest.mark.parametrize("text", [
+@pytest.mark.parametrize("text", [
     "Flood near Balkhu bridge, 2 children stuck on roof, need rescue",
     "Several stuck on the rooftop, water rising",
     "An elderly woman stuck in the flooded house",
@@ -361,7 +360,7 @@ def test_stuck_with_people_or_roof_triggers(text):
     assert res.people_trapped == "yes" and res.severity == 4
 
 
-@_pytest.mark.parametrize("text", [
+@pytest.mark.parametrize("text", [
     "Bus stuck in mud on the Prithvi highway",
     "Two cars stuck in traffic near Kalanki",
     "Two cars stuck on the roadside after the landslide",

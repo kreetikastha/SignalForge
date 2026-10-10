@@ -113,6 +113,23 @@ def test_explain_urgency_shows_mass_casualty_tier():
     assert "~8 people affected" in reason
 
 
+def test_adapter_exposes_injuries_and_immediate_hazards():
+    analysis = ReportAnalysis(
+        incident_type=IncidentType.BUILDING_COLLAPSE,
+        severity=5,
+        summary="Workers injured in a damaged building.",
+        confidence=0.9,
+        injuries_reported=2,
+        hazards=["unstable structure", "live electrical wires"],
+    )
+    result = adapter.to_backend_dict(analysis)
+
+    assert result["injuries_reported"] == 2
+    assert result["hazards"] == ["unstable structure", "live electrical wires"]
+    assert "2 injuries reported" in result["priority_reason"]
+    assert "hazards: unstable structure, live electrical wires" in result["priority_reason"]
+
+
 def test_backend_service_falls_back_when_ai_analysis_fails(monkeypatch, caplog):
     def fail_analysis(description):
         assert description == "Smoke near the market"
