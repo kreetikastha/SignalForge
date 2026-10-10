@@ -128,6 +128,39 @@ using the pre-analysis grouping output, and scores the labeled genuine, prank,
 and spam cases plus the repeat-reporter rule. Treat the small trust-label set
 as a development check, not a validated moderation benchmark.
 
+## OpenRouter live-demo check
+
+The OpenRouter endpoint was tested with `google/gemma-4-31b-it` and stub mode
+disabled. In a sequential HTTP check on 2026-10-10, the health endpoint
+responded in 0.02 seconds. Two real report submissions completed the grouping,
+triage, and legitimacy stages in 12.13 and 10.75 seconds, respectively. The
+second similar report was matched to the first (similarity 0.933), and both
+reports shared one incident group. Both analyses returned `completed`; the
+model identified the flood, two trapped people, and a trapped-person count of
+2 in this check. The same reporter ID was also flagged as a repeat reporter.
+
+Operation retrieval took about 0.00-0.03 seconds, and the `verified`,
+`dispatched`, `rescue_active`, and `completed` updates each took about
+0.01-0.03 seconds. The operation remained independent of AI analysis; team
+assignment and the confirmed count of two rescued people were saved in the
+operation history. These requests ran through the actual FastAPI HTTP routes
+against a temporary database, which was removed after the check; they did not
+add benchmark reports to the developer's normal report database.
+
+These timings indicate that sequential submissions are workable for a live
+demo, provided the UI keeps its loading state visible while analysis runs.
+This was a two-report smoke benchmark, not a concurrency/load test or an SLA.
+Provider latency can vary, and configured retries/timeouts can make failures
+take substantially longer than the successful requests above. Repeat the
+measurement from the actual demo host/network before relying on it.
+
+For local testing with OpenRouter, set `LLM_BASE_URL` to
+`https://openrouter.ai/api/v1`, set `LLM_MODEL`,
+`GROUPING_MODEL`, and `LEGIT_MODEL` to `google/gemma-4-31b-it`, configure
+`LLM_API_KEY` outside source control, and set `DISASTERLENS_STUB=0`. Restart
+the backend after changing its environment. Never commit `ai/.env` or include
+API-key values in logs, screenshots, or benchmark output.
+
 ## Rescue operation features
 
 - Rescue progress is independent from both `analysis_status` and the
