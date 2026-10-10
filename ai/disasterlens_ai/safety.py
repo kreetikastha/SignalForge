@@ -29,8 +29,9 @@ TRAPPED_TERMS = (
     # English
     "trapped",
     # Bare "stuck" is deliberately NOT a term: "bus stuck in mud", "cars stuck
-    # in traffic" describe vehicles, not trapped people. Only these specific
-    # senses of "stuck" denote someone who cannot get out.
+    # in traffic" describe vehicles, not trapped people. These specific senses
+    # always denote someone who cannot get out; person-subject and
+    # "stuck on the roof" senses are handled by _stuck_means_trapped().
     "stuck inside",
     "stuck under",
     "stuck in the rubble",
@@ -81,6 +82,20 @@ _TRAPPED_RE = re.compile("|".join(
     r"(?<!\w)%s(?!\w)" % re.escape(term)
     for term in sorted(TRAPPED_TERMS, key=len, reverse=True)))
 
+# "stuck" is ambiguous: "2 children stuck on roof" is a rescue, "bus stuck in
+# mud" is not. Bare "stuck" is therefore not in TRAPPED_TERMS; it counts only
+# when a person-noun is the subject, or when it names a place people are
+# stranded (roof, tree...). Vehicle-in-traffic/mud phrasing is excluded first.
+_PERSON_NOUNS = (r"(?:people|persons?|children|child|kids?|babies|baby|family|families|"
+                 r"men|man|women|woman|elderly|residents?|villagers?|passengers?|"
+                 r"students?|workers?|labou?rers?|someone|somebody)")
+_STUCK_PERSON_RE = re.compile(r"(?<!\w)%s(?:\s+\w+){0,2}?\s+stuck(?!\w)" % _PERSON_NOUNS)
+_STUCK_PLACE_RE = re.compile(
+    r"(?<!\w)stuck\s+(?:on|at|atop|up)\s+(?:the\s+|a\s+|their\s+|his\s+|her\s+)?"
+    r"(?:roof|rooftop|tree|terrace|island|hilltop)(?!\w)")
+_STUCK_BENIGN_RE = re.compile(
+    r"(?<!\w)stuck\s+in\s+(?:the\s+|a\s+)?(?:traffic|mud|jam|queue)(?!\w)")
+
 # Clause delimiters for the negation guard. । (U+0964 DEVANAGARI DANDA) is the
 # Devanagari full stop, so Devanagari sentences split the same way English ones
 # do. A run of delimiters ("...!", "a; b") collapses into a single cut.
@@ -96,6 +111,12 @@ def _clauses(text_lower: str) -> list[str]:
     return [clause for clause in _CLAUSE_RE.split(text_lower) if clause.strip()]
 
 
+def _stuck_means_trapped(clause: str) -> bool:
+    if _STUCK_BENIGN_RE.search(clause):
+        return False
+    return bool(_STUCK_PERSON_RE.search(clause) or _STUCK_PLACE_RE.search(clause))
+
+
 def _negated(clause: str) -> bool:
     return any(phrase in clause for phrase in NEGATION_PHRASES)
 
@@ -108,7 +129,8 @@ def _reports_trapped(text_lower: str) -> bool:
     a different clause of the same message.
     """
     return any(
-        not _negated(clause) and _TRAPPED_RE.search(clause)
+        not _negated(clause)
+        and (_TRAPPED_RE.search(clause) or _stuck_means_trapped(clause))
         for clause in _clauses(text_lower)
     )
 

@@ -93,11 +93,8 @@ def test_rule_b_still_matches_next_to_punctuation():
 
 
 def test_rule_c_severity_floor_english():
-    # Was "stuck in the elevator": bare "stuck" is no longer a trapped term
-    # (vehicle/mud reports must not trigger), so this now uses the kept variant
-    # "stuck inside" to exercise the same severity-floor rule.
     a = _analysis(people_trapped="unknown", severity=2)
-    res = apply_safety_net("Two people are stuck inside the elevator", a)
+    res = apply_safety_net("Two people are stuck in the elevator", a)
     assert res.people_trapped == "yes"
     assert res.severity == 4
     assert "severity_floor_trapped" in res.flags
@@ -346,3 +343,36 @@ def test_kept_stuck_variants_still_trigger(text):
     assert "trapped_keyword_override" in res.flags
     assert "severity_floor_trapped" in res.flags
 
+
+
+# --- person-subject / place senses of "stuck" (regression: dead-provider fallback
+# --- must still catch "2 children stuck on roof") --------------------------------
+import pytest as _pytest
+
+
+@_pytest.mark.parametrize("text", [
+    "Flood near Balkhu bridge, 2 children stuck on roof, need rescue",
+    "Several stuck on the rooftop, water rising",
+    "An elderly woman stuck in the flooded house",
+    "Passengers stuck in the overturned bus",
+])
+def test_stuck_with_people_or_roof_triggers(text):
+    res = apply_safety_net(text, _analysis(people_trapped="unknown", severity=2))
+    assert res.people_trapped == "yes" and res.severity == 4
+
+
+@_pytest.mark.parametrize("text", [
+    "Bus stuck in mud on the Prithvi highway",
+    "Two cars stuck in traffic near Kalanki",
+    "Two cars stuck on the roadside after the landslide",
+    "People stuck in traffic near Kalanki",
+])
+def test_stuck_vehicle_or_traffic_does_not_trigger(text):
+    res = apply_safety_net(text, _analysis(people_trapped="unknown", severity=2))
+    assert res.people_trapped == "unknown"
+
+
+def test_stuck_person_negated_in_own_clause_only():
+    res = apply_safety_net("Nobody was trapped at the school, but 3 children stuck on the roof",
+                           _analysis(people_trapped="unknown", severity=2))
+    assert res.people_trapped == "yes"
