@@ -1,4 +1,5 @@
 import logging
+import math
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Literal, TypedDict
@@ -95,6 +96,10 @@ class NormalizedAnalysis(TypedDict):
     urgency_score: int | None
     needs: list[str]
     language: Literal["ne", "en", "other"]
+    people_affected: int | None
+    vulnerable_groups: list[str]
+    flags: list[str]
+    needs_review: bool
 
 
 def get_db():
@@ -133,6 +138,24 @@ def _normalize_report_flag(value: object) -> Literal["yes", "no", "unknown"]:
     if normalized == "no":
         return "no"
     return "unknown"
+
+
+def _normalize_people_affected(value: object) -> int | None:
+    """Adapter contract: a whole number of people, or None when unknown."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and math.isfinite(value) and value.is_integer():
+        return int(value)
+    return None
+
+
+def _normalize_str_list(value: object) -> list[str]:
+    """Adapter contract: a list of labels; anything else is dropped."""
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]
 
 
 def _infer_from_text(original_text: str):
@@ -260,6 +283,13 @@ def _normalize_ai_result(
     urgency_value = result.get("urgency_score")
     needs_value = result.get("needs", [])
     language_value = result.get("language", "en")
+    # Casualty / triage context produced by adapter.to_backend_dict(). Missing
+    # keys are normal for mock and failure payloads, so they default instead of
+    # raising: None people affected, no vulnerable groups, no flags, no review.
+    people_affected_value = result.get("people_affected")
+    vulnerable_groups_value = result.get("vulnerable_groups")
+    flags_value = result.get("flags")
+    needs_review_value = result.get("needs_review")
 
     return {
         "incident_type": str(incident_type),
@@ -296,6 +326,12 @@ def _normalize_ai_result(
             if language_value == "en"
             else "other"
         ),
+        "people_affected": _normalize_people_affected(people_affected_value),
+        "vulnerable_groups": _normalize_str_list(vulnerable_groups_value),
+        "flags": _normalize_str_list(flags_value),
+        "needs_review": (
+            needs_review_value if isinstance(needs_review_value, bool) else False
+        ),
     }
 
 
@@ -319,12 +355,15 @@ def _analysis_from_result(result: NormalizedAnalysis) -> ReportAnalysis:
         incident_type=incident_type,
         location_text=result["location_text"],
         severity=_severity_level(result["severity"]),
+        people_affected=_normalize_people_affected(result.get("people_affected")),
         people_trapped=result["people_trapped"],
         road_blocked=result["road_blocked"],
+        vulnerable_groups=_normalize_str_list(result.get("vulnerable_groups")),
         needs=result["needs"],
         summary=result["ai_summary"],
         language=result["language"],
         confidence=confidence,
+        flags=_normalize_str_list(result.get("flags")),
     )
 
 
