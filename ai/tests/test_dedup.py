@@ -255,15 +255,15 @@ def test_geo_proximity_alone_never_marks_duplicate():
     assert m.similarity < config.JUDGE_LOW
 
 
-def test_geo_only_pair_is_never_sent_to_the_judge(monkeypatch):
+def test_geo_only_pair_sent_to_geo_near_judge_returns_false(monkeypatch):
     _enable_judge(monkeypatch)
     calls = []
-    monkeypatch.setattr(dedup, "chat", lambda *a, **k: calls.append((a, k)) or "{}")
+    monkeypatch.setattr(dedup, "chat", lambda *a, **k: calls.append((a, k)) or '{"same_incident": false, "reason": "different places"}')
 
     new, existing = _geo_only_pair()
     m = find_duplicate(new, existing, latitude=27.705, longitude=85.295)
 
-    assert calls == []
+    assert len(calls) == 1
     assert not m.is_duplicate
 
 

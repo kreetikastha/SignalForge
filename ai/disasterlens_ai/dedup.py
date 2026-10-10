@@ -142,6 +142,40 @@ def find_duplicate(new: ReportAnalysis, existing: list[IncidentRef], *,
             best.is_duplicate = True
             if verdict[1]:
                 best.reason = f"{best.reason}; judge: {verdict[1]}"
+
+    # Geo-near judge for cross-language duplicates with zero/low text overlap.
+    # If the best heuristic result is not a duplicate, JUDGE_ENABLED, not STUB_MODE,
+    # and coordinates exist on both sides: collect candidates that passed type-compat
+    # and time-window checks with dist_km <= DUP_JUDGE_NEAR_KM, sort by distance,
+    # take at most DUP_JUDGE_MAX_CANDIDATES, and call _judge on each.
+    if (not best.is_duplicate
+            and config.JUDGE_ENABLED and not config.STUB_MODE
+            and latitude is not None and longitude is not None):
+        near_candidates: list[tuple[float, IncidentRef]] = []
+        for inc in existing:
+            allowed_types = COMPATIBLE_INCIDENT_TYPES.get(new.incident_type, {new.incident_type})
+            if inc.incident_type not in allowed_types:
+                continue
+            if now is not None and inc.received_at is not None:
+                if _as_utc(now) - _as_utc(inc.received_at) > timedelta(hours=config.DUP_WINDOW_HOURS):
+                    continue
+            if inc.latitude is not None and inc.longitude is not None:
+                dist_km = _haversine_km(latitude, longitude, inc.latitude, inc.longitude)
+                if dist_km <= config.DUP_JUDGE_NEAR_KM:
+                    near_candidates.append((dist_km, inc))
+        near_candidates.sort(key=lambda x: x[0])
+        for dist_km, inc in near_candidates[:config.DUP_JUDGE_MAX_CANDIDATES]:
+            try:
+                verdict = _judge(new, inc, dist_km=dist_km)
+            except Exception:
+                verdict = None
+            if verdict is not None and verdict[0]:
+                best.is_duplicate = True
+                best.incident_id = inc.id
+                best.similarity = max(best.similarity, config.DUPLICATE_THRESHOLD)
+                best.reason = f"geo-near judge: {verdict[1] if verdict[1] else 'same incident'}, distance {dist_km:.2f} km"
+                break
+
     if not best.is_duplicate:
         best.incident_id = None
     return best
