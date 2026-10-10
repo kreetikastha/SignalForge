@@ -119,8 +119,8 @@ def test_judge_true_marks_borderline_duplicate(monkeypatch):
     _enable_judge(monkeypatch)
     seen = {}
 
-    def fake_chat(system, user):
-        _ = system, user
+    def fake_chat(system, user, **kwargs):
+        _ = system, user, kwargs
         seen["system"], seen["user"] = system, user
         return '{"same_incident": true, "reason": "same shop fire at Kalimati"}'
 
@@ -141,6 +141,33 @@ def test_judge_exception_keeps_heuristic(monkeypatch):
         raise RuntimeError("no network")
 
     monkeypatch.setattr(dedup, "chat", boom)
+    new, existing = _borderline_pair()
+    m = find_duplicate(new, existing)
+    assert not m.is_duplicate and m.incident_id is None and m.similarity == 0.44
+
+
+def test_judge_timeout_keeps_heuristic(monkeypatch):
+    _enable_judge(monkeypatch)
+
+    def timeout_chat(system, user):
+        _ = system, user
+        raise TimeoutError("judge timed out")
+
+    monkeypatch.setattr(dedup, "chat", timeout_chat)
+    new, existing = _borderline_pair()
+    m = find_duplicate(new, existing)
+    # Heuristic score 0.44 should be kept, judge failure silently ignored
+    assert not m.is_duplicate and m.incident_id is None and m.similarity == 0.44
+
+
+def test_judge_timeout_never_raises(monkeypatch):
+    """Mock chat that hangs; find_duplicate must not raise and must keep heuristic."""
+    _enable_judge(monkeypatch)
+
+    def hang_chat(system, user):
+        raise TimeoutError("judge hung")
+
+    monkeypatch.setattr(dedup, "chat", hang_chat)
     new, existing = _borderline_pair()
     m = find_duplicate(new, existing)
     assert not m.is_duplicate and m.incident_id is None and m.similarity == 0.44
@@ -267,7 +294,7 @@ def test_judge_payload_carries_types_and_distance(monkeypatch):
     _enable_judge(monkeypatch)
     seen = {}
 
-    def fake_chat(system, user):
+    def fake_chat(system, user, **kwargs):
         seen["system"], seen["user"] = system, user
         return '{"same_incident": false, "reason": "different shops"}'
 
@@ -290,7 +317,7 @@ def test_judge_payload_without_coordinates_has_null_distance(monkeypatch):
     _enable_judge(monkeypatch)
     seen = {}
 
-    def fake_chat(system, user):
+    def fake_chat(system, user, **kwargs):
         seen["user"] = user
         return '{"same_incident": false, "reason": "no"}'
 
@@ -306,7 +333,7 @@ def test_judge_payload_includes_report_timestamp(monkeypatch):
     _enable_judge(monkeypatch)
     seen = {}
 
-    def fake_chat(system, user):
+    def fake_chat(system, user, **kwargs):
         seen["user"] = user
         return '{"same_incident": false, "reason": "no"}'
 
@@ -330,7 +357,7 @@ def test_judge_prompt_is_read_once_and_cached(monkeypatch, tmp_path):
     systems = []
     monkeypatch.setattr(
         dedup, "chat",
-        lambda system, user: systems.append(system)
+        lambda system, user, **kwargs: systems.append(system)
         or '{"same_incident": false, "reason": "no"}')
 
     new, existing = _borderline_pair()

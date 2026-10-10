@@ -11,6 +11,7 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "")
 STUB_MODE = os.getenv("DISASTERLENS_STUB", "0") == "1"
 JUDGE_ENABLED = os.getenv("DISASTERLENS_JUDGE", "0") == "1"
+JUDGE_TIMEOUT = float(os.getenv("DISASTERLENS_JUDGE_TIMEOUT", "5"))
 
 MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "1"))
 REQUEST_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "20"))  # seconds
