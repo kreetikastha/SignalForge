@@ -3,6 +3,72 @@ from enum import Enum
 from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
+# Canonical needs vocabulary (used for normalization and evaluation)
+_NEEDS_CANONICAL = {
+    "rescue",
+    "medical",
+    "food",
+    "water",
+    "shelter",
+    "road_clearing",
+    "firefighting",
+    "evacuation",
+    "other",
+}
+
+# Synonym mapping to canonical terms
+_NEEDS_SYNONYMS: dict[str, str] = {
+    # medical
+    "ambulance": "medical",
+    "doctor": "medical",
+    "first_aid": "medical",
+    "medical_aid": "medical",
+    "medical_help": "medical",
+    # rescue
+    "search_and_rescue": "rescue",
+    "extraction": "rescue",
+    "trapped": "rescue",
+    # firefighting
+    "fire_brigade": "firefighting",
+    "fire_fighting": "firefighting",
+    # water
+    "drinking_water": "water",
+    # shelter
+    "housing": "shelter",
+    "tent": "shelter",
+    "shelter_needed": "shelter",
+    # road_clearing
+    "clear_road": "road_clearing",
+    "debris_removal": "road_clearing",
+    "road_clearance": "road_clearing",
+    # evacuation
+    "evacuate": "evacuation",
+}
+
+
+def normalize_needs(needs: list[str]) -> list[str]:
+    """Map needs to canonical vocabulary, deduplicate preserving order.
+
+    Unknown terms map to "other" only if the result would otherwise be empty.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for n in needs or []:
+        key = str(n).strip().lower()
+        if not key:
+            continue
+        canonical = _NEEDS_SYNONYMS.get(key, key if key in _NEEDS_CANONICAL else "other")
+        if canonical not in seen:
+            seen.add(canonical)
+            out.append(canonical)
+    # If everything mapped to "other" and there are no other terms, keep one "other"
+    if out == ["other"] and needs:
+        return ["other"]
+    # Drop "other" if we have at least one canonical term
+    if len(out) > 1 and "other" in out:
+        out = [x for x in out if x != "other"]
+    return out
+
 
 class IncidentType(str, Enum):
     FLOOD = "flood"

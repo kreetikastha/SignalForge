@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from . import config
 from .client import chat
 from .safety import apply_safety_net
-from .schemas import IncidentType, ReportAnalysis
+from .schemas import IncidentType, ReportAnalysis, normalize_needs
 
 log = logging.getLogger(__name__)
 
@@ -97,7 +97,11 @@ def analyze_report(text: str, image: bytes | None = None) -> ReportAnalysis:
         try:
             raw = _chat(system, norm_text, image, shots,
                         timeout=min(config.REQUEST_TIMEOUT, remaining))
-            parsed = ReportAnalysis(**_extract_json(raw))
+            parsed_dict = _extract_json(raw)
+            # Normalize needs to canonical vocabulary before validation
+            if "needs" in parsed_dict and isinstance(parsed_dict["needs"], list):
+                parsed_dict["needs"] = normalize_needs(parsed_dict["needs"])
+            parsed = ReportAnalysis(**parsed_dict)
             return apply_safety_net(norm_text, parsed)
         except (ValueError, ValidationError) as e:  # bad JSON / schema mismatch
             last_err = e
