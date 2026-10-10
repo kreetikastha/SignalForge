@@ -2,6 +2,35 @@
 
 DisasterLens is an AI-powered emergency coordination platform that uses Gemma 4 to analyze disaster reports, extract critical information, prioritize urgent incidents, and visualize affected locations on an interactive map all through a unified dashboard designed to support faster, more informed disaster response.
 
+## Why DisasterLens
+
+**The problem:** In fast-moving emergencies, responders drown in unstructured reports — social media posts, phone calls, SMS — with no consistent way to extract location, severity, or trapped-person signals. Duplicate reports fragment situational awareness and delay triage.
+
+**What already works:**
+
+- Structured extraction: incident type, severity (1–5), location text, people trapped, road blocked, hazards, vulnerable groups, needs — returned as typed JSON
+- Nepali / English support: Devanagari, Romanized Nepali, and English reports analyzed with language detection
+- Duplicate grouping: heuristic Jaccard similarity on text + location, with optional LLM judge; incidents share one lifecycle
+- Urgency scoring with safety net: 0–100 triage score from severity, casualties, vulnerable groups, trapped people, road blockages, corroborating reports; clause-aware keyword overrides for "trapped" in Nepali and English
+- Lifecycle tracking: `new → under_review → verified → response_in_progress → resolved` with actor-attributed history; status updates apply to entire duplicate group
+- Situation briefing: LLM-generated summary from up to 30 distinct incidents, evidence-only, fails safely (HTTP 503) if model unavailable
+
+### Hackathon tracks
+
+**Best Use of Gemma 4:**
+- Gemma 4 drives the full analysis pipeline: classification, extraction, severity assessment, and the situation briefing
+- Multilingual prompt handles Devanagari and Romanized Nepali without separate models
+
+**Best Use of Open-Source AI for Real-World Impact:**
+- Runs locally with a stub mode (`DISASTERLENS_STUB=1`) for development without API costs
+- Open-weight model endpoint (NVIDIA-hosted Gemma 4) keeps inference accessible; backend is pure Python/FastAPI/SQLite
+
+### Limitations
+
+- No authentication or user accounts; `changed_by` is a free-text operator label, not verified identity
+- Duplicate detection is heuristic (Jaccard on tokens + haversine distance), not embedding-based; LLM judge is optional and off by default
+- Mock/fallback analyses are marked `analysis_status: "mock"` and must be manually verified before dispatch
+
 ## Run locally
 
 Install the backend and AI module dependencies from the repository root:
