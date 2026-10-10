@@ -6,7 +6,7 @@
 - Provider: https://openrouter.ai/api/v1 (OpenRouter)
 - Workers: 2
 - Timestamp: 2026-10-10T06:15:25+00:00
-- Samples evaluated: 12 (first 12 of 20 in data/sample_reports.json)
+- Samples evaluated: 12 (first 12 of 66 in data/sample_reports.json)
 
 **This is a 12-sample subset**, not the full evaluation set. Results may not generalize.
 
@@ -41,8 +41,6 @@
 
 ## Interpretation
 
-**Strength:** Incident type classification (91.7%), severity calibration (100% in-range), road-blocked detection (91.7%), and language identification (100%) are strong. All 12 samples produced valid high-confidence output (confidence 0.9–0.95), and there were zero severity under- or over-triage cases. The sole true trapped-person case (s12, Romanized Nepali) was correctly caught.
+Incident type classification (91.7%), severity calibration (100% in-range), road-blocked detection (91.7%), and language identification (100%) are strong on this subset. All 12 samples produced valid high-confidence output (confidence 0.9–0.95), with zero severity under- or over-triage cases.
 
-**Weakness:** Needs recall is low (20%) — the model often returns synonyms (e.g., "ambulance" vs "medical", "road_clearing" vs "shelter") that the exact-match evaluator misses. People-trapped accuracy (58.3%) is pulled down by false alarms: the safety net correctly flags explicit "trapped" language but also triggers on ambiguous reports where ground truth is "unknown" (s02, s11).
-
-**Gap to close:** The needs taxonomy needs alignment (synonym mapping or broader evaluator matching) to reflect actual capability. The trapped false-alarm rate suggests the keyword safety net is sensitive by design; this is a deliberate recall-over-precision tradeoff for rescue-critical signals.
+Trapped recall is based on a single positive sample (s12), so it is not informative. Duplicate metrics are n/a because this subset contains no duplicate pairs. Needs recall is 20% (2/10), and trapped false alarms occur on s02 and s11; the causes of these gaps have not yet been diagnosed.
