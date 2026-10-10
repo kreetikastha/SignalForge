@@ -130,6 +130,23 @@ def test_adapter_exposes_injuries_and_immediate_hazards():
     assert "hazards: unstable structure, live electrical wires" in result["priority_reason"]
 
 
+def test_adapter_keeps_trapped_count_separate_from_affected_count():
+    analysis = ReportAnalysis(
+        incident_type=IncidentType.FLOOD,
+        severity=5,
+        summary="Two people trapped in a flooded house.",
+        confidence=0.9,
+        people_affected=12,
+        people_trapped="yes",
+        people_trapped_count=2,
+    )
+
+    result = adapter.to_backend_dict(analysis)
+
+    assert result["people_affected"] == 12
+    assert result["people_trapped_count"] == 2
+
+
 def test_backend_service_falls_back_when_ai_analysis_fails(monkeypatch, caplog):
     def fail_analysis(description):
         assert description == "Smoke near the market"

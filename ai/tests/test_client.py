@@ -44,6 +44,22 @@ def test_per_call_timeout_overrides_the_default(monkeypatch):
     assert seen["timeout"] == client.config.REQUEST_TIMEOUT
 
 
+def test_model_override_selects_a_stage_model(monkeypatch):
+    seen = {}
+
+    def create(**kw):
+        seen.update(kw)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            finish_reason="stop", message=SimpleNamespace(content="{}"))])
+
+    monkeypatch.setattr(client, "_get_client", lambda: SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+
+    client.chat("system", "user", model="grouping-model")
+
+    assert seen["model"] == "grouping-model"
+
+
 def test_image_data_url_uses_detected_mime(monkeypatch):
     seen = {}
 

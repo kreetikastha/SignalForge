@@ -37,7 +37,14 @@ class Report(Base):
     duplicate_of: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duplicate_similarity: Mapped[float | None] = mapped_column(Float, nullable=True)
     duplicate_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reporter_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    legitimacy_label: Mapped[str] = mapped_column(
+        String, nullable=False, default="unassessed"
+    )
+    legitimacy_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    legitimacy_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     people_affected: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    people_trapped_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     injuries_reported: Mapped[int | None] = mapped_column(Integer, nullable=True)
     hazards: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     vulnerable_groups: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
@@ -54,6 +61,20 @@ class Report(Base):
     )
     status_updated_by: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    # Operator-managed rescue operation state, independent from AI and review status.
+    operation_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="reported"
+    )
+    assigned_team: Mapped[str | None] = mapped_column(String, nullable=True)
+    dispatched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_updated: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    rescue_outcome: Mapped[str | None] = mapped_column(String, nullable=True)
+    people_rescued: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -68,6 +89,24 @@ class IncidentStatusEvent(Base):
     report_id: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
     previous_status: Mapped[str] = mapped_column(String, nullable=False)
     new_status: Mapped[str] = mapped_column(String, nullable=False)
+    changed_by: Mapped[str] = mapped_column(String, nullable=False)
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class RescueOperationEvent(Base):
+    __tablename__ = "rescue_operation_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    report_id: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
+    previous_status: Mapped[str] = mapped_column(String, nullable=False)
+    new_status: Mapped[str] = mapped_column(String, nullable=False)
+    assigned_team: Mapped[str | None] = mapped_column(String, nullable=True)
+    rescue_outcome: Mapped[str | None] = mapped_column(String, nullable=True)
+    people_rescued: Mapped[int | None] = mapped_column(Integer, nullable=True)
     changed_by: Mapped[str] = mapped_column(String, nullable=False)
     changed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

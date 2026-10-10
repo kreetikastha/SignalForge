@@ -27,6 +27,37 @@ def test_negative_reported_people_counts_are_rejected():
         )
 
 
+def test_negative_trapped_people_count_is_rejected():
+    with pytest.raises(ValidationError):
+        ReportAnalysis(
+            incident_type=IncidentType.FLOOD,
+            severity=3,
+            people_trapped_count=-1,
+            summary="x",
+            confidence=0.5,
+        )
+
+
+def test_trapped_people_count_is_optional_and_separate_from_affected_count():
+    report = ReportAnalysis(
+        incident_type=IncidentType.FLOOD,
+        severity=3,
+        people_affected=40,
+        people_trapped="yes",
+        people_trapped_count=2,
+        summary="x",
+        confidence=0.5,
+    )
+    assert report.people_affected == 40
+    assert report.people_trapped_count == 2
+    assert ReportAnalysis(
+        incident_type=IncidentType.FLOOD,
+        severity=3,
+        summary="x",
+        confidence=0.5,
+    ).people_trapped_count is None
+
+
 def test_analyze_examples_validate():
     path = (Path(__file__).resolve().parents[1]
             / "disasterlens_ai" / "prompts" / "analyze_examples.json")

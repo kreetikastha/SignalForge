@@ -394,5 +394,68 @@
     "text": "सराङकोट जाने सडकमा पहिरो खसेको छ, एक लेन बन्द छ।",
     "lat": 28.229,
     "lon": 83.956
+  },
+  {
+    "id": "s67",
+    "text": "Floodwater is entering homes near the Bagmati river in Teku after overnight rain. Several families have moved upstairs and need help checking the water level.",
+    "lat": 27.699,
+    "lon": 85.289,
+    "reporter_id": "eval-reporter-a"
+  },
+  {
+    "id": "s68",
+    "text": "Update from the same neighborhood: water is still rising near Teku and two elderly residents need assistance moving to higher ground.",
+    "lat": 27.700,
+    "lon": 85.290,
+    "reporter_id": "eval-reporter-a"
+  },
+  {
+    "id": "s69",
+    "text": "A small fire started in a kitchen in Lalitpur. Neighbors called the fire service and no injuries are known.",
+    "lat": 27.658,
+    "lon": 85.324,
+    "reporter_id": "eval-reporter-b"
+  },
+  {
+    "id": "s70",
+    "text": "Prank! I made up the earthquake report to see how many people would show up. There was no earthquake.",
+    "lat": 27.717,
+    "lon": 85.324,
+    "reporter_id": "eval-reporter-c"
+  },
+  {
+    "id": "s71",
+    "text": "This was only a joke, no building collapsed and nobody is trapped. Please ignore my fake emergency message.",
+    "lat": 27.718,
+    "lon": 85.325,
+    "reporter_id": "eval-reporter-d"
+  },
+  {
+    "id": "s72",
+    "text": "Buy discounted phone cases and crypto tokens at my online shop. Message me for prices. No emergency.",
+    "lat": 27.700,
+    "lon": 85.300,
+    "reporter_id": "eval-reporter-e"
+  },
+  {
+    "id": "s73",
+    "text": "Earn guaranteed money with this investment link. Subscribe now for exclusive offers and referral bonuses.",
+    "lat": 27.710,
+    "lon": 85.310,
+    "reporter_id": "eval-reporter-f"
+  },
+  {
+    "id": "s74",
+    "text": "Something strange is happening near the river. People should be careful.",
+    "lat": 27.697,
+    "lon": 85.300,
+    "reporter_id": "eval-reporter-g"
+  },
+  {
+    "id": "s75",
+    "text": "कोटेश्वरको सडकमा पानी जमेको छ। मोटरसाइकल चिप्लिएर एक जना घाइते भएका छन्, एम्बुलेन्स बोलाइएको छ।",
+    "lat": 27.678,
+    "lon": 85.347,
+    "reporter_id": "eval-reporter-h"
   }
 ]
