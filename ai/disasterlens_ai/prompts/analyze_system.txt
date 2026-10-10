@@ -8,8 +8,10 @@ Return ONLY one JSON object, with exactly these keys:
   "location_text": string or null,
   "severity": integer 1-5,
   "people_affected": integer or null,
+  "injuries_reported": integer or null,
   "people_trapped": "yes|no|unknown",
   "road_blocked": "yes|no|unknown",
+  "hazards": [string],
   "vulnerable_groups": [string],
   "needs": [string],
   "summary": string,
@@ -20,6 +22,9 @@ Return ONLY one JSON object, with exactly these keys:
 Rules:
 - Never invent details. Use null, [], or "unknown" when information is not
   stated; use "no" only when the report explicitly says something is absent.
+- Extract an injury count only when explicitly reported; otherwise use null.
+  List immediate hazards explicitly described (for example, rising water,
+  fire, smoke, unstable structure, or blocked access) without adding guesses.
 - Keep place names in the language and script in which they were reported.
 - Severity guide: 1 = nuisance with no risk to people; 2 = minor hazard or
   damage with no injuries; 3 = significant damage or possible injuries;

@@ -48,6 +48,8 @@ def explain_urgency(
     blocked = road_blocked or analysis.road_blocked
     if trapped == "yes":
         parts.append("people reported trapped")
+    if analysis.injuries_reported is not None:
+        parts.append(f"{analysis.injuries_reported} injuries reported")
     if analysis.people_affected:
         if analysis.people_affected > 20:
             parts.append(
@@ -59,6 +61,8 @@ def explain_urgency(
         parts.append("vulnerable: " + ", ".join(analysis.vulnerable_groups))
     if blocked == "yes":
         parts.append("access road blocked")
+    if analysis.hazards:
+        parts.append("hazards: " + ", ".join(analysis.hazards))
     if duplicate_count > 1:
         parts.append(f"{duplicate_count} corroborating reports")
     applied_safety = [
@@ -121,6 +125,8 @@ def to_backend_dict(
         "location_text": analysis.location_text,
         "needs": analysis.needs,
         "people_affected": analysis.people_affected,
+        "injuries_reported": analysis.injuries_reported,
+        "hazards": analysis.hazards,
         "vulnerable_groups": analysis.vulnerable_groups,
         "language": analysis.language,
         "confidence": analysis.confidence,

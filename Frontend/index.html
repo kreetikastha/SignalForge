@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.js"></script>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20261010-1">
 </head>
 <body>
   <div class="shell">
@@ -61,6 +61,20 @@
         <article class="metric metric--received"><div class="metric-icon blue"><i data-lucide="messages-square"></i></div><div><div class="metric-label">Incidents loaded</div><div class="metric-value" id="reportCount">—</div></div><div class="metric-change">unique groups from API</div></article>
       </section>
 
+      <section class="situation-panel panel" aria-labelledby="situationTitle">
+        <div class="panel-head">
+          <div><h2 class="panel-title" id="situationTitle">Situation intelligence</h2><div class="panel-kicker" id="situationUpdated">Loading regional summary…</div></div>
+          <button class="secondary-button" id="briefingButton" type="button">Generate Gemma briefing</button>
+        </div>
+        <div class="situation-grid">
+          <div><div class="detail-label">Reports / incidents</div><strong id="situationTotals">—</strong></div>
+          <div><div class="detail-label">Critical / high</div><strong id="situationUrgent">—</strong></div>
+          <div><div class="detail-label">Common types</div><div id="situationTypes" class="situation-types">Loading…</div></div>
+          <div><div class="detail-label">Nearby hotspots · within 3 km</div><div id="situationHotspots" class="situation-hotspots">Loading…</div></div>
+        </div>
+        <div class="briefing-result" id="briefingResult" aria-live="polite">Generate an evidence-based briefing from the current distinct incident reports.</div>
+      </section>
+
       <section class="content-grid">
         <article class="panel map-panel" id="mapPanel">
           <div class="panel-head">
@@ -75,6 +89,9 @@
           <div class="panel-head"><div class="queue-heading"><div><h2 class="panel-title">Priority queue</h2><div class="panel-kicker">AI or fallback triage, highest priority first</div></div><span class="queue-count" id="queueCount">—</span></div><button class="icon-button" id="sortButton" title="Sort incidents" aria-label="Sort incidents"><i data-lucide="arrow-down-wide-narrow"></i></button></div>
           <div class="queue-controls" role="group" aria-label="Filter incidents">
             <button class="filter-button active" data-filter="all">All</button><button class="filter-button" data-filter="urgent">Urgent</button><button class="filter-button" data-filter="duplicate">Duplicates</button>
+            <select class="map-select" id="filterType" aria-label="Filter by incident type"><option value="all">Any type</option></select>
+            <select class="map-select" id="filterSeverity" aria-label="Filter by severity"><option value="all">Any severity</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="info">Info</option><option value="unknown">Unknown</option></select>
+            <select class="map-select" id="filterStatus" aria-label="Filter by lifecycle status"><option value="all">Any status</option><option value="new">New</option><option value="under_review">Under review</option><option value="verified">Verified</option><option value="response_in_progress">Response in progress</option><option value="resolved">Resolved</option></select>
           </div>
           <div class="incident-list" id="incidentList" aria-live="polite"></div>
           <div class="queue-footer"><span><strong id="queueSource">API</strong> · incident feed</span><span id="queueDataStatus">Loading…</span></div>
@@ -101,9 +118,9 @@
 
       <section class="detail-strip" aria-live="polite">
         <div><div class="detail-label">Selected incident</div><div class="detail-main" id="detailTitle">Select an incident</div></div>
-        <div><div class="detail-description" id="detailDescription">Choose a report from the priority queue to review its location, urgency, and source summary.</div><div class="detail-explainer" id="detailExplainer">Priority scores help order reports for human review; they are not probabilities. Confidence is shown only for AI model analyses.</div></div>
+        <div><div class="detail-description" id="detailDescription">Choose a report from the priority queue to review its location, urgency, and source summary.</div><div class="detail-explainer" id="detailExplainer">Priority scores help order reports for human review; they are not probabilities. Confidence is shown only for AI model analyses.</div><div class="detail-explainer" id="detailEvidence"></div><div id="corroboratingReports"></div><div class="status-history" id="statusHistory"></div></div>
         <div class="detail-photo" id="detailPhoto" hidden><div class="detail-label">Attached photo</div><img class="detail-image" id="detailImage" alt="Image attached to selected incident"></div>
-        <div class="detail-actions"><button class="secondary-button" id="zoomButton"><i data-lucide="locate-fixed"></i> Locate</button><button class="secondary-button" id="copyCoordinatesButton" disabled><i data-lucide="copy"></i><span>Copy coordinates</span></button></div>
+        <div class="detail-actions"><label class="status-control"><span class="detail-label">Lifecycle</span><select id="incidentStatus" class="map-select" aria-label="Next incident lifecycle status" disabled><option value="">Select incident</option></select><input id="statusActor" type="text" maxlength="100" placeholder="Responder name (optional)" aria-label="Responder name"><button class="secondary-button" id="updateStatusButton" type="button" disabled>Update status</button></label><button class="secondary-button" id="zoomButton"><i data-lucide="locate-fixed"></i> Locate</button><button class="secondary-button" id="copyCoordinatesButton" disabled><i data-lucide="copy"></i><span>Copy coordinates</span></button></div>
       </section>
       <div class="demo-note">Counts come from reports saved in the local API; earlier test submissions remain in SQLite until removed · No emergency services are contacted</div>
     </main>
@@ -123,6 +140,6 @@
   <div class="toast" id="toast" role="status"><i data-lucide="circle-check"></i><span id="toastMessage">Report added to the priority queue.</span></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="script.js?v=20261009-2"></script>
+  <script src="script.js?v=20261010-1"></script>
 </body>
 </html>

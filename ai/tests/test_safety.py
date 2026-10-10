@@ -337,6 +337,7 @@ def test_bare_stuck_vehicle_and_mud_reports_do_not_trigger(text):
     "Workers stuck in the rubble",
     "A child stuck in the building",
     "Men stuck in the debris",
+    "Two children stuck on roof",
 ])
 def test_kept_stuck_variants_still_trigger(text):
     a = _analysis(people_trapped="unknown", severity=3)
@@ -345,4 +346,3 @@ def test_kept_stuck_variants_still_trigger(text):
     assert res.severity == 4
     assert "trapped_keyword_override" in res.flags
     assert "severity_floor_trapped" in res.flags
-

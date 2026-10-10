@@ -8,6 +8,9 @@
     const markerById = new Map();
     let selectedId = reports[0]?.id || null;
     let activeFilter = 'all';
+    let activeType = 'all';
+    let activeSeverity = 'all';
+    let activeStatus = 'all';
     let urgencyFirst = true;
     let heatLayer = null;
     const mapRegion = { south: 26, north: 31, west: 79, east: 89 };
@@ -70,6 +73,19 @@
       });
       return [...groups.values()];
     }
+    function groupedReports(items) {
+      const groups = new Map();
+      items.forEach((report) => {
+        const rootId = report.duplicateOf ?? report.id;
+        if (!groups.has(rootId)) groups.set(rootId, []);
+        groups.get(rootId).push(report);
+      });
+      return [...groups.entries()].map(([rootId, members]) => {
+        const corroborating = reports.filter((report) => report.id === rootId || report.duplicateOf === rootId);
+        const representative = members.find((report) => report.id === rootId) || members[0];
+        return { rootId, members: corroborating, representative };
+      });
+    }
 
     function sortedReports(severityFirst = false) {
       return [...reports].sort((left, right) => {
@@ -81,21 +97,24 @@
       });
     }
     function visibleReports() {
-      if (activeFilter === 'urgent') {
-        return sortedReports(true).filter((report) => ['critical', 'high'].includes(report.severity));
-      }
-      const ordered = sortedReports();
-      if (activeFilter === 'duplicate') return ordered.filter((report) => report.duplicate === true);
-      return ordered;
+      return sortedReports(activeFilter === 'urgent').filter((report) => {
+        if (activeFilter === 'urgent' && !['critical', 'high'].includes(report.severity)) return false;
+        if (activeFilter === 'duplicate' && report.duplicate !== true) return false;
+        return (activeType === 'all' || report.typeKey === activeType)
+          && (activeSeverity === 'all' || report.severity === activeSeverity)
+          && (activeStatus === 'all' || report.status === activeStatus);
+      });
     }
     function renderMarkers() {
-      const mappedReports = reports.filter(isInMapRegion);
+      const mappedReports = groupedReports(visibleReports())
+        .map((group) => group.representative)
+        .filter(isInMapRegion);
       const mapEmpty = document.getElementById('mapEmpty');
       mapEmpty.hidden = mappedReports.length > 0;
       const apiFailed = document.getElementById('apiStatus').dataset.state === 'error';
       document.getElementById('map').dataset.state = apiFailed ? 'error' : mappedReports.length ? 'ready' : loadingIncidents ? 'loading' : 'empty';
-      document.getElementById('mapEmptyTitle').textContent = reports.length ? 'No reports in the Nepal map area' : 'No incidents yet';
-      document.getElementById('mapEmptyDescription').textContent = apiFailed ? 'The Nepal map is ready for new report locations.' : reports.length ? 'Reports outside Nepal remain in the queue but are not pinned on this Nepal-focused map.' : 'New report locations will appear on the map.';
+      document.getElementById('mapEmptyTitle').textContent = reports.length ? 'No matching reports in the Nepal map area' : 'No incidents yet';
+      document.getElementById('mapEmptyDescription').textContent = apiFailed ? 'The Nepal map is ready for new report locations.' : reports.length ? 'Change the incident filters or report locations to show map pins.' : 'New report locations will appear on the map.';
       document.getElementById('map').classList.toggle('map-has-data', mappedReports.length > 0);
       const mapAction = document.getElementById('mapEmptyAction');
       mapAction.dataset.mapAction = apiFailed ? 'retry' : 'report';
@@ -104,7 +123,9 @@
       markerLayer.clearLayers();
       markerById.clear();
       mappedReports.forEach((report) => {
-        const marker = L.marker([report.lat, report.lng], { icon: markerIcon(report) }).bindPopup(`<div class="popup-title">${escapeHtml(report.type)} · ${report.severity.toUpperCase()}</div><div class="popup-sub">${escapeHtml(report.location)}<br>${escapeHtml(report.title)}</div>`);
+        const group = groupedReports([report])[0];
+        const corroboration = group.members.length > 1 ? `<br>${group.members.length} corroborating reports` : '';
+        const marker = L.marker([report.lat, report.lng], { icon: markerIcon(report) }).bindPopup(`<div class="popup-title">${escapeHtml(report.type)} · ${report.severity.toUpperCase()}</div><div class="popup-sub">${escapeHtml(report.location)}<br>${escapeHtml(report.title)}${corroboration}</div>`);
         marker.on('click', () => selectIncident(report.id, false));
         marker.addTo(markerLayer);
         markerById.set(report.id, marker);
@@ -117,13 +138,14 @@
       list.classList.toggle('is-empty', shown.length === 0);
       let queueContent;
       if (shown.length) {
-        queueContent = shown.map((report) => {
+        queueContent = groupedReports(shown).map(({ members, representative: report }) => {
+        const duplicateScore = Math.max(...members.map((member) => member.duplicateConfidence ?? 0));
         const meta = [
           { label: report.time, title: 'Time since this report was received.' },
           { label: getAnalysisLabel(report.analysisStatus), title: report.analysisStatus === 'mock' ? 'No completed live model analysis was recorded. Treat this preliminary assessment as unverified.' : 'Processing status of the report analysis.' },
           report.urgencyScore === null ? null : { label: `Priority ${report.urgencyScore}/100`, title: 'Triage score based on reported severity and needs; it is not a probability.' },
           report.analysisStatus === 'completed' && report.confidence !== null ? { label: `Model confidence ${report.confidence}%`, title: 'The model’s estimate of its own answer quality; this is not a calibrated probability.' } : null,
-          report.duplicate === true ? { label: `Possible duplicate · ${report.supportingReports} reports`, title: 'Reports grouped as possibly describing the same incident.' } : null
+          members.length > 1 ? { label: `${members.length} independent reports${duplicateScore ? ` · ${Math.round(duplicateScore * 100)}% match` : ''}`, title: report.duplicateReason || 'Reports grouped as possibly describing the same incident.' } : null
         ].filter(Boolean);
         const imageUrl = getImageUrl(report.imageUrl);
         const photo = imageUrl ? `<img class="incident-thumbnail" src="${escapeHtml(imageUrl)}" alt="Photo attached to report ${escapeHtml(report.id)}" loading="lazy">` : '';
@@ -160,7 +182,7 @@
       document.getElementById('openCount').textContent = countText(open);
       document.getElementById('urgentCount').textContent = countText(urgent);
       document.getElementById('duplicateCount').textContent = !dataAvailable || (reports.length && !allDuplicateDataAvailable) ? '—' : countText(duplicates);
-      document.getElementById('queueCount').textContent = countText(reports.length);
+      document.getElementById('queueCount').textContent = countText(groupedReports(visibleReports()).length);
       document.getElementById('sidebarCount').textContent = countText(groups.length);
       document.getElementById('reportCount').textContent = countText(groups.length);
       const mappedCount = reports.filter(isInMapRegion).length;
@@ -222,15 +244,41 @@
       if (!report) return;
       selectedId = id;
       document.getElementById('detailTitle').textContent = `${report.type} · ${report.id}`;
-      const details = [report.description, report.priorityReason, `Assessment: ${getAnalysisLabel(report.analysisStatus)}`, `Status: ${report.status}`];
+      const statusLabels = { new: 'New', under_review: 'Under review', verified: 'Verified', response_in_progress: 'Response in progress', resolved: 'Resolved' };
+      const details = [report.description, report.priorityReason, `Assessment: ${getAnalysisLabel(report.analysisStatus)}`, `Status: ${statusLabels[report.status] || report.status}`];
       if (report.urgencyScore !== null) details.push(`Triage priority score: ${report.urgencyScore}/100`);
       if (report.peopleTrapped !== 'unknown') details.push(`People trapped: ${report.peopleTrapped}`);
+      if (report.peopleAffected !== null) details.push(`People affected: ${report.peopleAffected}`);
+      if (report.injuriesReported !== null) details.push(`Injuries reported: ${report.injuriesReported}`);
       if (report.roadBlocked !== 'unknown') details.push(`Road blocked: ${report.roadBlocked}`);
+      if (report.vulnerableGroups.length) details.push(`Vulnerable groups: ${report.vulnerableGroups.join(', ')}`);
+      if (report.needs.length) details.push(`Reported needs: ${report.needs.join(', ')}`);
+      if (report.hazards.length) details.push(`Immediate hazards: ${report.hazards.join(', ')}`);
       if (report.analysisStatus === 'completed' && report.confidence !== null) details.push(`Model confidence estimate: ${report.confidence}%`);
       document.getElementById('detailDescription').textContent = details.filter(Boolean).join(' · ');
       document.getElementById('detailExplainer').textContent = report.analysisStatus === 'mock'
         ? 'Fallback assessment: no completed live model analysis was recorded. Severity and priority are preliminary; verify details manually.'
-        : 'Priority is a triage score from severity and reported needs—not a probability. Model confidence is the model’s self-estimate, not a calibrated guarantee.';
+        : report.analysisStatus === 'completed'
+          ? `AI-generated assessment${report.needsReview ? ' · human review recommended' : ''}. Priority is a triage score, not a probability. Confidence is the model’s estimate, not a calibrated guarantee.`
+          : 'Assessment is not verified. Human review is recommended.';
+      document.getElementById('detailEvidence').textContent = report.flags.length
+        ? `Safety flags: ${report.flags.join(', ')}`
+        : report.priorityReason ? `Why this priority: ${report.priorityReason}` : '';
+      const corroboratingReports = groupedReports([report])[0].members;
+      const reportDetails = document.getElementById('corroboratingReports');
+      reportDetails.innerHTML = corroboratingReports.length > 1
+        ? `<details class="corroborating-details"><summary>${corroboratingReports.length} independent reports grouped for this incident</summary><ul>${corroboratingReports.map((item) => `<li><strong>Report #${escapeHtml(item.id)}</strong> · ${escapeHtml(item.description)}</li>`).join('')}</ul></details>`
+        : '';
+      const statusSelect = document.getElementById('incidentStatus');
+      statusSelect.innerHTML = '';
+      const nextStatus = { new: 'under_review', under_review: 'verified', verified: 'response_in_progress', response_in_progress: 'resolved' }[report.status];
+      const currentOption = document.createElement('option');
+      currentOption.value = nextStatus || '';
+      currentOption.textContent = nextStatus ? `Move to ${statusLabels[nextStatus]}` : statusLabels[report.status] || report.status;
+      statusSelect.append(currentOption);
+      statusSelect.disabled = !nextStatus;
+      document.getElementById('updateStatusButton').disabled = !nextStatus;
+      loadStatusHistory(report.id);
       const image = document.getElementById('detailImage');
       const photo = document.getElementById('detailPhoto');
       const imageUrl = getImageUrl(report.imageUrl);
@@ -250,13 +298,58 @@
         notify('This report is outside the Nepal-focused map area.');
       }
     }
+    async function loadStatusHistory(reportId) {
+      const history = document.getElementById('statusHistory');
+      history.textContent = 'Loading status history…';
+      try {
+        const response = await fetch(`${apiBaseUrl}/reports/${encodeURIComponent(reportId)}/status-history`, { headers: { Accept: 'application/json' } });
+        if (!response.ok) throw new Error(`API returned HTTP ${response.status}`);
+        const events = await response.json();
+        history.textContent = events.length
+          ? `Lifecycle changes: ${events.map((event) => `${event.previous_status.replaceAll('_', ' ')} → ${event.status.replaceAll('_', ' ')} by ${event.changed_by} at ${new Date(event.changed_at).toLocaleString()}`).join(' · ')}`
+          : 'No lifecycle changes recorded yet.';
+      } catch (error) {
+        history.textContent = `Status history unavailable: ${error.message}`;
+      }
+    }
+    async function updateSelectedStatus() {
+      const report = reports.find((item) => item.id === selectedId);
+      const status = document.getElementById('incidentStatus').value;
+      if (!report || !status) return;
+      const button = document.getElementById('updateStatusButton');
+      button.disabled = true;
+      try {
+        const response = await fetch(`${apiBaseUrl}/reports/${encodeURIComponent(report.id)}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({
+            status,
+            changed_by: document.getElementById('statusActor').value.trim() || 'local responder'
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || `API returned HTTP ${response.status}`);
+        notify(`Incident #${report.id} moved to ${status.replaceAll('_', ' ')}.`);
+        await loadIncidents(false);
+        await loadSituation();
+      } catch (error) {
+        notify(`Could not update incident status: ${error.message}`);
+      } finally {
+        const current = reports.find((item) => item.id === selectedId);
+        button.disabled = !current || !({
+          new: 'under_review',
+          under_review: 'verified',
+          verified: 'response_in_progress',
+          response_in_progress: 'resolved'
+        })[current.status];
+      }
+    }
     function refreshHeatLayer() {
       if (heatLayer) map.removeLayer(heatLayer);
       const mappedReports = reports.filter(isInMapRegion);
       if (document.getElementById('mapLayer').value !== 'heat' || !L.circle || !mappedReports.length) return;
-      const severityColors = { critical: '#c84a3d', high: '#bd791c', medium: '#4c9b6a', low: '#477895', unknown: '#7b837d' };
+      const severityColors = { critical: '#c84a3d', high: '#bd791c', medium: '#d3aa35', low: '#477895', unknown: '#7b837d' };
       heatLayer = L.layerGroup(mappedReports.map((report) => L.circle([report.lat, report.lng], { radius: report.severity === 'critical' ? 480 : report.severity === 'high' ? 350 : report.severity === 'medium' ? 220 : 140, color: severityColors[report.severity], fillColor: severityColors[report.severity], fillOpacity: .13, weight: 1, opacity: .35 }))).addTo(map);
-      markerLayer.bringToFront();
     }
     function escapeHtml(value) {
       return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
@@ -294,6 +387,7 @@
         const time = ageMinutes === null ? 'time unavailable' : ageMinutes < 1 ? 'just now' : ageMinutes < 60 ? `${ageMinutes} min ago` : ageMinutes < 1440 ? `${Math.floor(ageMinutes / 60)} hr ago` : new Date(receivedAt).toLocaleDateString();
         return {
           id: String(item.incident_id ?? item.id ?? item.report_id ?? `API-${index + 1}`),
+          typeKey: rawType.toLowerCase().replace(/[\s-]+/g, '_'),
           type,
           title: String(item.summary ?? item.ai_summary ?? item.title ?? description.split(/[.!?\n]/)[0].slice(0, 68) ?? 'Incident report'),
           location,
@@ -306,11 +400,22 @@
           urgencyScore: item.urgency_score === undefined || item.urgency_score === null ? null : Number(item.urgency_score),
           duplicate: item.duplicate === undefined && item.is_duplicate === undefined ? null : Boolean(item.duplicate ?? item.is_duplicate),
           duplicateOf: item.duplicate_of === null || item.duplicate_of === undefined ? null : String(item.duplicate_of),
+          duplicateConfidence: item.duplicate_similarity === undefined || item.duplicate_similarity === null ? null : Number(item.duplicate_similarity),
+          duplicateReason: item.duplicate_reason ?? null,
           imageUrl: item.image_url ?? null,
           analysisStatus: String(item.analysis_status ?? 'unknown'),
           status: String(item.status ?? 'new').toLowerCase(),
+          statusUpdatedAt: item.status_updated_at ?? null,
+          statusUpdatedBy: item.status_updated_by ?? null,
           priorityReason: item.priority_reason ?? null,
           peopleTrapped: normalizePeopleTrapped(item.people_trapped),
+          peopleAffected: Number.isInteger(item.people_affected) ? item.people_affected : null,
+          injuriesReported: Number.isInteger(item.injuries_reported) ? item.injuries_reported : null,
+          hazards: Array.isArray(item.hazards) ? item.hazards.map(String) : [],
+          vulnerableGroups: Array.isArray(item.vulnerable_groups) ? item.vulnerable_groups.map(String) : [],
+          needs: Array.isArray(item.needs) ? item.needs.map(String) : [],
+          flags: Array.isArray(item.flags) ? item.flags.map(String) : [],
+          needsReview: item.needs_review === true,
           rescueStatus: normalizeRescueStatus(item),
           roadBlocked: item.road_blocked ?? 'unknown',
           supportingReports: Number(item.supporting_reports ?? 1),
@@ -318,6 +423,75 @@
           source: item.source ?? null
         };
       });
+    }
+    function refreshTypeOptions() {
+      const select = document.getElementById('filterType');
+      const selected = select.value;
+      const types = [...new Set(reports.map((report) => [report.typeKey, report.type]))]
+        .sort((left, right) => left[1].localeCompare(right[1]));
+      select.innerHTML = '<option value="all">Any type</option>' + types.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
+      select.value = types.some(([value]) => value === selected) ? selected : 'all';
+      activeType = select.value;
+    }
+    function renderSituation(data) {
+      document.getElementById('situationUpdated').textContent = `Updated ${new Date(data.generated_at).toLocaleTimeString()} · nearby reports grouped within 3 km`;
+      document.getElementById('situationTotals').textContent = `${data.total_reports} / ${data.distinct_incidents}`;
+      document.getElementById('situationUrgent').textContent = `${data.critical_incidents} / ${data.high_priority_incidents}`;
+      const typeEntries = Object.entries(data.type_counts || {}).slice(0, 5);
+      document.getElementById('situationTypes').innerHTML = typeEntries.length
+        ? typeEntries.map(([type, count]) => `<span>${escapeHtml(type.replace(/[_-]+/g, ' '))} <strong>${count}</strong></span>`).join('')
+        : '<span>No incident types yet.</span>';
+      const hotspots = data.hotspots || [];
+      document.getElementById('situationHotspots').innerHTML = hotspots.length
+        ? hotspots.slice(0, 5).map((hotspot) => `<button class="hotspot-link" type="button" data-hotspot-id="${escapeHtml(hotspot.incident_ids[0])}"><strong>${escapeHtml(hotspot.area)}</strong><span>${hotspot.incident_count} incidents · ${hotspot.report_count} reports</span></button>`).join('')
+        : '<span>No nearby clusters found.</span>';
+      document.querySelectorAll('[data-hotspot-id]').forEach((button) => button.addEventListener('click', () => {
+        const id = String(button.dataset.hotspotId);
+        activeFilter = 'all';
+        activeType = 'all';
+        activeSeverity = 'all';
+        activeStatus = 'all';
+        document.querySelectorAll('.filter-button').forEach((item) => item.classList.toggle('active', item.dataset.filter === 'all'));
+        document.getElementById('filterType').value = 'all';
+        document.getElementById('filterSeverity').value = 'all';
+        document.getElementById('filterStatus').value = 'all';
+        document.querySelector('.nav-link[data-view="incidents"]').click();
+        selectIncident(id, true);
+      }));
+    }
+    async function loadSituation() {
+      const updated = document.getElementById('situationUpdated');
+      try {
+        const response = await fetch(`${apiBaseUrl}/situation`, { headers: { Accept: 'application/json' } });
+        if (!response.ok) throw new Error(`API returned HTTP ${response.status}`);
+        renderSituation(await response.json());
+      } catch (error) {
+        updated.textContent = `Situation summary unavailable: ${error.message}`;
+        document.getElementById('situationTotals').textContent = '—';
+        document.getElementById('situationUrgent').textContent = '—';
+        document.getElementById('situationTypes').textContent = 'Could not load incident types.';
+        document.getElementById('situationHotspots').textContent = 'Could not load nearby clusters.';
+      }
+    }
+    async function generateBriefing() {
+      const button = document.getElementById('briefingButton');
+      const result = document.getElementById('briefingResult');
+      button.disabled = true;
+      result.textContent = 'Gemma is preparing a briefing from saved incident reports…';
+      try {
+        const response = await fetch(`${apiBaseUrl}/situation/briefing`, {
+          method: 'POST',
+          headers: { Accept: 'application/json' }
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || `API returned HTTP ${response.status}`);
+        if (data.analysis_status !== 'completed') throw new Error(data.detail || 'No reports are available.');
+        result.textContent = `${data.briefing} Based on ${data.based_on_incidents} distinct incidents · ${data.model}. ${data.key_points.join(' ')}`;
+      } catch (error) {
+        result.textContent = `Briefing unavailable: ${error.message}`;
+      } finally {
+        button.disabled = false;
+      }
     }
     function setApiStatus(state, message) {
       const status = document.getElementById('apiStatus');
@@ -334,6 +508,7 @@
         if (!response.ok) throw new Error(`API returned HTTP ${response.status}`);
         const payload = await response.json();
         reports = normalizeIncidents(payload);
+        refreshTypeOptions();
         selectedId = reports.some((report) => report.id === selectedId) ? selectedId : reports[0]?.id || null;
         loadingIncidents = false;
         setApiStatus('connected', 'API connected');
@@ -365,7 +540,23 @@
       activeFilter = button.dataset.filter;
       document.querySelectorAll('.filter-button').forEach((item) => item.classList.toggle('active', item === button));
       renderQueue();
+      renderMarkers();
     }));
+    document.getElementById('filterType').addEventListener('change', (event) => {
+      activeType = event.currentTarget.value;
+      renderQueue();
+      renderMarkers();
+    });
+    document.getElementById('filterSeverity').addEventListener('change', (event) => {
+      activeSeverity = event.currentTarget.value;
+      renderQueue();
+      renderMarkers();
+    });
+    document.getElementById('filterStatus').addEventListener('change', (event) => {
+      activeStatus = event.currentTarget.value;
+      renderQueue();
+      renderMarkers();
+    });
     document.getElementById('sortButton').addEventListener('click', () => { urgencyFirst = !urgencyFirst; renderQueue(); });
     document.getElementById('locateButton').addEventListener('click', () => {
       const bounds = L.latLngBounds(reports.filter(isInMapRegion).map((report) => [report.lat, report.lng]));
@@ -384,7 +575,12 @@
       }
     });
     document.getElementById('mapLayer').addEventListener('change', refreshHeatLayer);
-    document.getElementById('refreshButton').addEventListener('click', loadIncidents);
+    document.getElementById('refreshButton').addEventListener('click', () => {
+      loadIncidents();
+      loadSituation();
+    });
+    document.getElementById('briefingButton').addEventListener('click', generateBriefing);
+    document.getElementById('updateStatusButton').addEventListener('click', updateSelectedStatus);
     document.getElementById('notificationsButton').addEventListener('click', () => notify(reports.length ? `${reports.length} report${reports.length === 1 ? '' : 's'} in the local queue.` : 'No notifications yet. Reports submitted here will appear in the queue.'));
     function openReportDialog() {
       document.getElementById('reportDialog').showModal();
@@ -481,6 +677,8 @@
         }
         const saved = await response.json();
         selectedId = saved.report?.id === undefined ? selectedId : String(saved.report.id);
+        document.querySelector('.nav-link[data-view="incidents"]').click();
+        document.querySelector('.filter-button[data-filter="all"]').click();
         form.reset();
         if (selectedPreviewUrl) URL.revokeObjectURL(selectedPreviewUrl);
         selectedPreviewUrl = null;
@@ -490,6 +688,7 @@
         document.getElementById('reportDialog').close();
         notify(`Report #${saved.report?.id ?? 'saved'} saved by the backend. Refreshing incident feed…`);
         await loadIncidents(false);
+        await loadSituation();
       } catch (error) {
         notify(`Could not submit report: ${error.message}. Check API availability and CORS.`);
       } finally {
@@ -530,5 +729,6 @@
     renderMarkers();
     renderQueue();
     loadIncidents();
+    loadSituation();
     if (window.lucide) lucide.createIcons();
     window.setTimeout(() => map.invalidateSize(), 150);

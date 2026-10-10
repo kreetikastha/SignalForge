@@ -105,7 +105,7 @@
     .legend-item { display: flex; align-items: center; gap: 6px; }
     .legend-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
     .legend-dot.amber { background: #d79a36; }
-    .legend-dot.green { background: #4c9b6a; }
+    .legend-dot.green { background: #d3aa35; }
     .legend-dot.low { background: var(--blue); }
     .legend-dot.unknown { background: #858d87; }
     .legend-note { margin-left: auto; color: #859088; }
@@ -128,7 +128,7 @@
     .severity { display: inline-flex; align-items: center; gap: 5px; padding: 4px 6px; border-radius: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
     .severity.critical { background: var(--red-soft); color: var(--red); }
     .severity.high { background: var(--amber-soft); color: #a56b13; }
-    .severity.medium { background: #edf3e9; color: #5a7b42; }
+    .severity.medium { background: #fbf1cd; color: #896016; }
     .severity.low { background: var(--blue-soft); color: var(--blue); }
     .severity.unknown { background: #edf0ed; color: #68736c; }
     .incident-location { margin: 6px 0 0 22px; color: #606c64; font-size: 10px; }
@@ -137,13 +137,29 @@
     .duplicate-flag { color: #9b6b18; font-weight: 600; }
     .queue-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 11px 14px; margin-top: auto; border-top: 1px solid var(--line); color: #78837b; font-size: 10px; }
     .queue-footer strong { color: var(--green); font-weight: 600; }
+    .situation-panel { margin-bottom: 12px; overflow: hidden; }
+    .situation-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 13px 15px; }
+    .situation-grid > div { min-width: 0; }
+    .situation-grid > div > strong { display: block; margin-top: 4px; font-size: 20px; font-variant-numeric: tabular-nums; }
+    .situation-types, .situation-hotspots { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; color: var(--muted); font-size: 10px; }
+    .situation-types > span { padding: 3px 6px; border-radius: 3px; background: #f2f6f1; text-transform: capitalize; }
+    .situation-hotspots { display: grid; }
+    .hotspot-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px; border: 1px solid #e4eae4; border-radius: 4px; background: #fff; text-align: left; cursor: pointer; }
+    .hotspot-link:hover { border-color: #b8cbbd; background: #f7faf6; }
+    .hotspot-link strong { color: var(--green); font-size: 10px; }
+    .hotspot-link span { color: var(--muted); font-size: 9px; white-space: nowrap; }
+    .briefing-result { padding: 10px 15px; border-top: 1px solid var(--line); color: #536057; background: #f8faf7; font-size: 11px; line-height: 1.5; }
+    .queue-controls { flex-wrap: wrap; }
     .detail-strip { display: grid; grid-template-columns: minmax(180px, 1fr) 1.35fr auto auto; align-items: center; gap: 18px; padding: 14px 16px; margin-top: 15px; border: 1px solid var(--line); border-radius: 6px; background: #fff; box-shadow: var(--shadow); }
     .detail-label { color: #89938c; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; }
     .detail-main { margin-top: 4px; font-size: 12px; font-weight: 700; }
     .detail-description { color: #657168; font-size: 11px; line-height: 1.5; }
     .detail-explainer { margin-top: 7px; color: #7a857d; font-size: 9px; line-height: 1.4; }
     .detail-photo { display: grid; gap: 5px; }
-    .detail-actions { display: flex; gap: 6px; }
+    .detail-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 6px; }
+    .status-control { display: grid; min-width: 168px; gap: 5px; }
+    .status-control input { min-width: 0; height: 30px; padding: 0 7px; border: 1px solid var(--line); border-radius: 4px; font-size: 10px; }
+    .status-history { margin-top: 6px; color: #78837b; font-size: 9px; line-height: 1.45; }
     .secondary-button { height: 31px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 9px; border: 1px solid var(--line); border-radius: 4px; background: #fff; font-size: 10px; font-weight: 600; cursor: pointer; white-space: nowrap; }
     .secondary-button:hover { background: #f7f9f6; }
     .secondary-button i { width: 13px; height: 13px; }
@@ -254,6 +270,7 @@
       .metric { min-height: 67px; padding: 9px; }
       .metric-icon { width: 31px; height: 31px; }
       .metric-value { font-size: 24px; }
+      .situation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .content-grid { flex: 1 0 auto; grid-template-columns: minmax(0, 1fr); }
       .map-panel { min-height: 0; }
       #map { flex: 0 0 auto; height: 330px; min-height: 330px; }
@@ -262,6 +279,7 @@
       .detail-description { grid-column: 1 / -1; grid-row: 2; }
       .detail-photo { grid-column: 1; grid-row: 3; }
       .detail-actions { grid-column: 2; grid-row: 3; }
+      .status-control { min-width: 150px; }
       .demo-note { text-align: left; }
     }
     @media (max-width: 430px) {
@@ -283,12 +301,19 @@
       .legend-note { width: 100%; margin-left: 0; }
       .detail-strip { padding: 12px; }
       .secondary-button { padding: 0 7px; }
+      .situation-panel .panel-head { align-items: flex-start; padding: 10px; }
+      .situation-grid { gap: 9px; padding: 10px; }
+      .situation-grid > div > strong { font-size: 17px; }
+      .queue-controls .map-select { flex: 1 1 30%; min-width: 94px; }
     }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
     .main[data-view="incidents"] .metrics,
+    .main[data-view="incidents"] .situation-panel,
     .main[data-view="incidents"] .map-panel,
     .main[data-view="map"] .metrics,
+    .main[data-view="map"] .situation-panel,
     .main[data-view="rescues"] .metrics,
+    .main[data-view="rescues"] .situation-panel,
     .main[data-view="rescues"] .content-grid,
     .main[data-view="rescues"] .detail-strip,
     .main[data-view="rescues"] .demo-note,

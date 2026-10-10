@@ -20,8 +20,10 @@ class ReportAnalysis(BaseModel):
     location_text: Optional[str] = None
     severity: int = Field(ge=1, le=5)
     people_affected: Optional[int] = None
+    injuries_reported: Optional[int] = Field(default=None, ge=0)
     people_trapped: Literal["yes", "no", "unknown"] = "unknown"
     road_blocked: Literal["yes", "no", "unknown"] = "unknown"
+    hazards: list[str] = Field(default_factory=list)
     vulnerable_groups: list[str] = Field(default_factory=list)  # children, elderly, injured
     needs: list[str] = Field(default_factory=list)  # rescue, medical, food, shelter
     summary: str

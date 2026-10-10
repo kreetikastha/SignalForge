@@ -16,6 +16,17 @@ def test_severity_bounds():
         ReportAnalysis(incident_type=IncidentType.FLOOD, severity=9, summary="x", confidence=0.5)
 
 
+def test_negative_reported_people_counts_are_rejected():
+    with pytest.raises(ValidationError):
+        ReportAnalysis(
+            incident_type=IncidentType.FLOOD,
+            severity=3,
+            injuries_reported=-1,
+            summary="x",
+            confidence=0.5,
+        )
+
+
 def test_analyze_examples_validate():
     path = (Path(__file__).resolve().parents[1]
             / "disasterlens_ai" / "prompts" / "analyze_examples.json")
