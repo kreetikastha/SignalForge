@@ -100,7 +100,9 @@ def _duplicates(samples: list[dict], expected: dict, analyses: dict) -> dict:
     ids = [s["id"] for s in samples]
     refs = {sid: IncidentRef(id=sid, incident_type=analyses[sid].incident_type,
                              location_text=analyses[sid].location_text,
-                             summary=analyses[sid].summary) for sid in ids}
+                             summary=analyses[sid].summary,
+                             latitude=samples[sid].get("lat"),
+                             longitude=samples[sid].get("lon")) for sid in ids}
     grouped = {sid for sid in ids if expected[sid]["dup_group"]}
     truth, evaluated = set(), set()
     for a in ids:
@@ -111,13 +113,31 @@ def _duplicates(samples: list[dict], expected: dict, analyses: dict) -> dict:
                 truth.add((a, b))          # both directions of each in-group pair
             if a in grouped or b in grouped:
                 evaluated.add((a, b))
-    predicted = {p for p in evaluated
-                 if find_duplicate(analyses[p[0]], [refs[p[1]]]).is_duplicate}
-    tp = predicted & truth
-    return {"precision": (_rate(len(tp), len(predicted)), len(tp), len(predicted)),
-            "recall": (_rate(len(tp), len(truth)), len(tp), len(truth)),
-            "missed": sorted(truth - predicted),
-            "false_positives": sorted(predicted - truth)}
+    # With coordinates
+    predicted_with = {p for p in evaluated
+                     if find_duplicate(analyses[p[0]], [refs[p[1]]],
+                                       latitude=refs[p[1]].latitude,
+                                       longitude=refs[p[1]].longitude).is_duplicate}
+    tp_with = predicted_with & truth
+    precision_with = (_rate(len(tp_with), len(predicted_with)), len(tp_with), len(predicted_with))
+    recall_with = (_rate(len(tp_with), len(truth)), len(tp_with), len(truth))
+    # Without coordinates (pass None)
+    refs_no_coord = {sid: IncidentRef(id=sid, incident_type=analyses[sid].incident_type,
+                                      location_text=analyses[sid].location_text,
+                                      summary=analyses[sid].summary)
+                     for sid in ids}
+    predicted_without = {p for p in evaluated
+                        if find_duplicate(analyses[p[0]], [refs_no_coord[p[1]]]).is_duplicate}
+    tp_without = predicted_without & truth
+    precision_without = (_rate(len(tp_without), len(predicted_without)), len(tp_without), len(predicted_without))
+    recall_without = (_rate(len(tp_without), len(truth)), len(tp_without), len(truth))
+    return {"precision_with_coords": precision_with,
+            "recall_with_coords": recall_with,
+            "precision_without_coords": precision_without,
+            "recall_without_coords": recall_without,
+            "missed": sorted(truth - predicted_with),
+            "false_positives_with_coords": sorted(predicted_with - truth),
+            "false_positives_without_coords": sorted(predicted_without - truth)}
 
 
 def _safety(results: dict) -> dict:

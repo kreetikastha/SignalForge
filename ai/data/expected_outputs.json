@@ -608,5 +608,129 @@
     "needs_include": [],
     "language": "ne",
     "dup_group": "g3"
+  },
+  "s55": {
+    "incident_type": "flood",
+    "severity_min": 3,
+    "severity_max": 4,
+    "people_trapped": "unknown",
+    "road_blocked": "yes",
+    "needs_include": [
+      "shelter"
+    ],
+    "language": "en",
+    "dup_group": "g5"
+  },
+  "s56": {
+    "incident_type": "flood",
+    "severity_min": 3,
+    "severity_max": 4,
+    "people_trapped": "unknown",
+    "road_blocked": "yes",
+    "needs_include": [],
+    "language": "ne",
+    "dup_group": "g5"
+  },
+  "s57": {
+    "incident_type": "fire",
+    "severity_min": 3,
+    "severity_max": 4,
+    "people_trapped": "no",
+    "road_blocked": "no",
+    "needs_include": [
+      "medical"
+    ],
+    "language": "en",
+    "dup_group": "g6"
+  },
+  "s58": {
+    "incident_type": "fire",
+    "severity_min": 3,
+    "severity_max": 4,
+    "people_trapped": "no",
+    "road_blocked": "no",
+    "needs_include": [],
+    "language": "ne",
+    "dup_group": "g6"
+  },
+  "s59": {
+    "incident_type": "landslide",
+    "severity_min": 3,
+    "severity_max": 4,
+    "people_trapped": "unknown",
+    "road_blocked": "yes",
+    "needs_include": [],
+    "language": "en",
+    "dup_group": "g7"
+  },
+  "s60": {
+    "incident_type": "landslide",
+    "severity_min": 3,
+    "severity_max": 4,
+    "people_trapped": "unknown",
+    "road_blocked": "yes",
+    "needs_include": [],
+    "language": "ne",
+    "dup_group": "g7"
+  },
+  "s61": {
+    "incident_type": "flood",
+    "severity_min": 3,
+    "severity_max": 4,
+    "people_trapped": "unknown",
+    "road_blocked": "yes",
+    "needs_include": [],
+    "language": "en",
+    "dup_group": null
+  },
+  "s62": {
+    "incident_type": "flood",
+    "severity_min": 3,
+    "severity_max": 4,
+    "people_trapped": "unknown",
+    "road_blocked": "yes",
+    "needs_include": [],
+    "language": "en",
+    "dup_group": null
+  },
+  "s63": {
+    "incident_type": "fire",
+    "severity_min": 3,
+    "severity_max": 4,
+    "people_trapped": "no",
+    "road_blocked": "no",
+    "needs_include": [],
+    "language": "en",
+    "dup_group": null
+  },
+  "s64": {
+    "incident_type": "fire",
+    "severity_min": 3,
+    "severity_max": 4,
+    "people_trapped": "no",
+    "road_blocked": "no",
+    "needs_include": [],
+    "language": "en",
+    "dup_group": null
+  },
+  "s65": {
+    "incident_type": "landslide",
+    "severity_min": 3,
+    "severity_max": 4,
+    "people_trapped": "unknown",
+    "road_blocked": "yes",
+    "needs_include": [],
+    "language": "en",
+    "dup_group": null
+  },
+  "s66": {
+    "incident_type": "landslide",
+    "severity_min": 3,
+    "severity_max": 4,
+    "people_trapped": "unknown",
+    "road_blocked": "yes",
+    "needs_include": [],
+    "language": "en",
+    "dup_group": null
   }
 }
