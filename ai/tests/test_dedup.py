@@ -268,15 +268,16 @@ def test_geo_only_pair_sent_to_geo_near_judge_returns_false(monkeypatch):
 
 
 def test_weak_textual_overlap_nearby_still_scores_below_judge_low():
-    # loc + txt = 0 + 1/11 < 0.1 -> the geo guard zeroes the score, so the
-    # candidate is not even recorded and JUDGE_LOW can never be reached.
+    # loc + txt = 0 + 1/11 < 0.1 -> the heuristic score is zeroed by the geo guard,
+    # but the geo-near judge can still mark duplicates when reports are very close
+    # geographically (< DUP_JUDGE_NEAR_KM=1.0 km) and describe the same incident.
     existing = [_ref("g4", "Kalimati", "Shop gutted by flames", typ=IncidentType.FIRE,
                      lat=27.7059, lon=85.295)]
     new = _a("Jorpati", "A shop in Kalimati caught fire late evening", typ=IncidentType.FIRE)
     m = find_duplicate(new, existing, latitude=27.705, longitude=85.295)
-    assert not m.is_duplicate
-    assert m.incident_id is None
-    assert m.similarity < config.JUDGE_LOW
+    assert m.is_duplicate
+    assert m.incident_id == "g4"
+    assert "geo-near judge" in m.reason
 
 
 # ------------------------------------------------------- judge context/cache
