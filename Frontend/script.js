@@ -1,4 +1,8 @@
-    const apiBaseUrl = 'http://127.0.0.1:8001';
+    const configuredApiUrl = window.DISASTERLENS_API_URL?.replace(/\/$/, '');
+    const isLocalFrontend = window.location.protocol === 'file:'
+      || (['localhost', '127.0.0.1'].includes(window.location.hostname)
+        && window.location.port !== '8001');
+    const apiBaseUrl = configuredApiUrl ?? (isLocalFrontend ? 'http://127.0.0.1:8001' : '');
     let reports = [];
     let loadingIncidents = true;
     const map = L.map('map', { zoomControl: false, scrollWheelZoom: false }).setView([27.7172, 85.324], 10);

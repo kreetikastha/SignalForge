@@ -2,14 +2,16 @@ import logging
 import math
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from typing import Literal, TypedDict
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
-from starlette.responses import Response
+from starlette.responses import FileResponse, Response
 
 from ai_service import analyze_report
 from database import Base, SessionLocal, engine
@@ -41,7 +43,7 @@ new_columns = {
     "confidence": "FLOAT",
     "urgency_score": "INTEGER",
     "duplicate_of": "INTEGER",
-    "image_data": "BLOB",
+    "image_data": "BYTEA" if engine.dialect.name == "postgresql" else "BLOB",
     "image_mime_type": "VARCHAR",
     "status": "VARCHAR DEFAULT 'new' NOT NULL",
 }
@@ -447,11 +449,9 @@ def report_to_dict(
 
 @app.get("/")
 def root():
-    return {
-        "project": "DisasterLens",
-        "team": "SignalForge",
-        "status": "running",
-    }
+    return FileResponse(
+        Path(__file__).resolve().parents[1] / "Frontend" / "index.html"
+    )
 
 
 @app.get("/health")
@@ -707,3 +707,12 @@ def get_incidents(db: Session = Depends(get_db)):
         }
         for report in reports
     ]
+
+
+app.mount(
+    "/",
+    StaticFiles(
+        directory=Path(__file__).resolve().parents[1] / "Frontend"
+    ),
+    name="frontend",
+)
