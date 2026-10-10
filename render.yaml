@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: signalforge-backend
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt && pip install ./ai
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DISASTERLENS_STUB
+        value: "1"
