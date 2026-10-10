@@ -6,7 +6,13 @@ from datetime import datetime, timedelta, timezone
 from . import config
 from .analyzer import _extract_json
 from .client import chat
-from .schemas import IncidentMatch, IncidentRef, IncidentType, ReportAnalysis
+from .schemas import (
+    GroupingAnalysis,
+    IncidentMatch,
+    IncidentRef,
+    IncidentType,
+    ReportAnalysis,
+)
 
 # Naturally correlated emergencies: one event is routinely reported as the
 # other (a landslide blocks the road; an earthquake collapses a building; a
@@ -59,7 +65,7 @@ def _geo_score(dist_km: float) -> float:
     return (config.DUP_FAR_KM - dist_km) / (config.DUP_FAR_KM - config.DUP_NEAR_KM)
 
 
-def _judge(new: ReportAnalysis, inc: IncidentRef,
+def _judge(new: ReportAnalysis | GroupingAnalysis, inc: IncidentRef,
            dist_km: float | None = None) -> tuple[bool, str] | None:
     """Ask the LLM whether two borderline reports describe the same incident.
     `dist_km` is the great-circle distance when both sides carry coordinates.
@@ -78,7 +84,12 @@ def _judge(new: ReportAnalysis, inc: IncidentRef,
             "report_b": report_b,
             "distance_km": round(dist_km, 2) if dist_km is not None else None,
         }, ensure_ascii=False)
-        data = _extract_json(chat(_JUDGE_SYSTEM_PROMPT, user, timeout=config.JUDGE_TIMEOUT))
+        data = _extract_json(chat(
+            _JUDGE_SYSTEM_PROMPT,
+            user,
+            timeout=config.JUDGE_TIMEOUT,
+            model=config.GROUPING_MODEL,
+        ))
         if not isinstance(data.get("same_incident"), bool):
             return None
         return data["same_incident"], str(data.get("reason", ""))
@@ -86,7 +97,8 @@ def _judge(new: ReportAnalysis, inc: IncidentRef,
         return None
 
 
-def find_duplicate(new: ReportAnalysis, existing: list[IncidentRef], *,
+def find_duplicate(new: ReportAnalysis | GroupingAnalysis,
+                   existing: list[IncidentRef], *,
                    latitude: float | None = None, longitude: float | None = None,
                    now: datetime | None = None) -> IncidentMatch:
     """v1 heuristic: types must be compatible (see COMPATIBLE_INCIDENT_TYPES);

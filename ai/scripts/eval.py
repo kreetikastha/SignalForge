@@ -6,8 +6,14 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from disasterlens_ai import analyze_report, config, find_duplicate
-from disasterlens_ai.schemas import IncidentRef, ReportAnalysis
+from disasterlens_ai import (
+    analyze_report,
+    assess_legitimacy,
+    config,
+    find_duplicate,
+    group_report,
+)
+from disasterlens_ai.schemas import GroupingAnalysis, IncidentRef, ReportAnalysis
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 
@@ -17,6 +23,8 @@ def _run_info(workers: int = 1) -> dict:
     return {
         "mode": "stub" if config.STUB_MODE else "live",
         "model": config.LLM_MODEL or None,
+        "grouping_model": config.GROUPING_MODEL or config.LLM_MODEL or None,
+        "legitimacy_model": config.LEGIT_MODEL or config.LLM_MODEL or None,
         "provider": config.LLM_BASE_URL,
         "judge_enabled": config.JUDGE_ENABLED,
         "workers": workers,
@@ -39,6 +47,67 @@ def _analyze_all(samples: list[dict], workers: int) -> dict:
     return dict(pairs)
 
 
+def _group_all(samples: list[dict], workers: int) -> tuple[dict, dict]:
+    def one(sample: dict) -> tuple[str, GroupingAnalysis | None, str | None]:
+        try:
+            return sample["id"], group_report(sample["text"]), None
+        except Exception as exc:
+            return sample["id"], None, f"{type(exc).__name__}: {exc}"
+
+    if workers <= 1:
+        results = [one(sample) for sample in samples]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            results = list(pool.map(one, samples))
+    groupings = {sid: result for sid, result, _error in results}
+    errors = {sid: error for sid, _result, error in results if error}
+    return groupings, errors
+
+
+def _legitimacy_all(samples: list[dict], expected: dict, workers: int) -> dict:
+    labeled = [sample for sample in samples if expected[sample["id"]].get("legitimacy")]
+
+    def one(sample: dict) -> tuple[str, dict]:
+        try:
+            assessment = assess_legitimacy(sample["text"])
+            label = (
+                assessment.label
+                if assessment.confidence >= config.LEGIT_CONFIDENCE_THRESHOLD
+                else "uncertain"
+            )
+            return sample["id"], {
+                "label": label,
+                "confidence": assessment.confidence,
+                "reason": assessment.reason,
+                "error": None,
+            }
+        except Exception as exc:
+            return sample["id"], {
+                "label": "unassessed",
+                "confidence": None,
+                "reason": "Legitimacy assessment failed.",
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+
+    if workers <= 1:
+        pairs = [one(sample) for sample in labeled]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            pairs = list(pool.map(one, labeled))
+    return dict(pairs)
+
+
+def _repeat_reporter_flags(samples: list[dict]) -> dict[str, bool]:
+    seen: set[str] = set()
+    flags: dict[str, bool] = {}
+    for sample in samples:
+        reporter_id = str(sample.get("reporter_id") or "").strip()
+        flags[sample["id"]] = bool(reporter_id and reporter_id in seen)
+        if reporter_id:
+            seen.add(reporter_id)
+    return flags
+
+
 def _rate(part: int, whole: int) -> float | None:
     return 100.0 * part / whole if whole else None
 
@@ -55,16 +124,30 @@ def _load(limit: int | None):
     return samples, expected
 
 
-def _sample_results(samples: list[dict], expected: dict, analyses: dict) -> dict:
+def _sample_results(
+    samples: list[dict],
+    expected: dict,
+    analyses: dict,
+    groupings: dict | None = None,
+    legitimacy: dict | None = None,
+) -> dict:
     results = {}
     for s in samples:
         sid, exp, got = s["id"], expected[s["id"]], analyses[s["id"]]
+        grouping = (groupings or {}).get(sid)
+        legitimacy_result = (legitimacy or {}).get(sid)
         results[sid] = {
             "expected": exp,
             "got": {"incident_type": got.incident_type.value, "severity": got.severity,
                     "people_trapped": got.people_trapped, "road_blocked": got.road_blocked,
                     "needs": list(got.needs), "language": got.language,
                     "confidence": got.confidence},
+            "grouping": {
+                "incident_type": grouping.incident_type.value,
+                "location_text": grouping.location_text,
+                "summary": grouping.summary,
+            } if grouping is not None else None,
+            "legitimacy": legitimacy_result,
             "incident_type_ok": got.incident_type.value == exp["incident_type"],
             "severity_ok": exp["severity_min"] <= got.severity <= exp["severity_max"],
             "people_trapped_ok": got.people_trapped == exp["people_trapped"],
@@ -96,7 +179,12 @@ def _summary(results: dict) -> dict:
     }
 
 
-def _duplicates(samples: list[dict], expected: dict, analyses: dict) -> dict:
+def _duplicates(
+    samples: list[dict],
+    expected: dict,
+    analyses: dict,
+    groupings: dict | None = None,
+) -> dict:
     """Pairwise duplicate precision/recall, scored two ways.
 
     * with coordinates (headline): what the backend does. The NEW report's
@@ -106,12 +194,13 @@ def _duplicates(samples: list[dict], expected: dict, analyses: dict) -> dict:
     """
     ids = [s["id"] for s in samples]
     coords = {s["id"]: (s.get("lat"), s.get("lon")) for s in samples}
+    grouping_data = groupings or analyses
 
     def ref(sid: str, with_coords: bool) -> IncidentRef:
         lat, lon = coords[sid] if with_coords else (None, None)
-        return IncidentRef(id=sid, incident_type=analyses[sid].incident_type,
-                           location_text=analyses[sid].location_text,
-                           summary=analyses[sid].summary,
+        return IncidentRef(id=sid, incident_type=grouping_data[sid].incident_type,
+                           location_text=grouping_data[sid].location_text,
+                           summary=grouping_data[sid].summary,
                            latitude=lat, longitude=lon)
 
     refs = {True: {sid: ref(sid, True) for sid in ids},
@@ -133,7 +222,9 @@ def _duplicates(samples: list[dict], expected: dict, analyses: dict) -> dict:
             kwargs = {}
             if with_coords:  # `a` is the new report, `b` the existing incident
                 kwargs = {"latitude": coords[a][0], "longitude": coords[a][1]}
-            if find_duplicate(analyses[a], [refs[with_coords][b]], **kwargs).is_duplicate:
+            if find_duplicate(
+                grouping_data[a], [refs[with_coords][b]], **kwargs
+            ).is_duplicate:
                 out.add((a, b))
         return out
 
@@ -178,6 +269,62 @@ def _safety(results: dict) -> dict:
     }
 
 
+def _trust_metrics(samples: list[dict], expected: dict, results: dict) -> dict:
+    reporter_flags = _repeat_reporter_flags(samples)
+    labeled_ids = [
+        sample["id"]
+        for sample in samples
+        if expected[sample["id"]].get("legitimacy")
+    ]
+    repeat_ids = [
+        sample["id"]
+        for sample in samples
+        if "repeat_reporter" in expected[sample["id"]]
+    ]
+    legitimacy_correct = [
+        sid for sid in labeled_ids
+        if results[sid]["legitimacy"] is not None
+        and results[sid]["legitimacy"]["label"] == expected[sid]["legitimacy"]
+    ]
+    repeat_correct = [
+        sid for sid in repeat_ids
+        if reporter_flags[sid] == expected[sid]["repeat_reporter"]
+    ]
+    return {
+        "legitimacy": {
+            "correct": len(legitimacy_correct),
+            "total": len(labeled_ids),
+            "accuracy": _rate(len(legitimacy_correct), len(labeled_ids)),
+            "incorrect_ids": sorted(set(labeled_ids) - set(legitimacy_correct)),
+        },
+        "repeat_reporter": {
+            "correct": len(repeat_correct),
+            "total": len(repeat_ids),
+            "accuracy": _rate(len(repeat_correct), len(repeat_ids)),
+            "incorrect_ids": sorted(set(repeat_ids) - set(repeat_correct)),
+        },
+        "predicted_repeat_reporter": reporter_flags,
+    }
+
+
+def _grouping_type_summary(samples: list[dict], expected: dict, results: dict) -> dict:
+    compared = [
+        sample["id"] for sample in samples
+        if results[sample["id"]]["grouping"] is not None
+    ]
+    correct = [
+        sid for sid in compared
+        if results[sid]["grouping"]["incident_type"]
+        == expected[sid]["incident_type"]
+    ]
+    return {
+        "correct": len(correct),
+        "total": len(compared),
+        "accuracy": _rate(len(correct), len(compared)),
+        "incorrect_ids": sorted(set(compared) - set(correct)),
+    }
+
+
 def _failures(results: dict) -> list[str]:
     lines = []
     for sid in sorted(results):
@@ -209,9 +356,18 @@ def main() -> int:
 
     samples, expected = _load(args.limit)
     analyses = _analyze_all(samples, args.workers)
-    results = _sample_results(samples, expected, analyses)
+    groupings, grouping_errors = _group_all(samples, args.workers)
+    legitimacy = _legitimacy_all(samples, expected, args.workers)
+    results = _sample_results(
+        samples, expected, analyses, groupings=groupings, legitimacy=legitimacy
+    )
     metrics = _summary(results)
-    dup = _duplicates(samples, expected, analyses)
+    grouping_metrics = _grouping_type_summary(samples, expected, results)
+    trust = _trust_metrics(samples, expected, results)
+    effective_groupings = {
+        sid: grouping or analyses[sid] for sid, grouping in groupings.items()
+    }
+    dup = _duplicates(samples, expected, analyses, groupings=effective_groupings)
     safety = _safety(results)
     trapped_recall = _rate(len(safety["trapped_caught"]), len(safety["trapped"]))
 
@@ -219,6 +375,8 @@ def main() -> int:
     print(f"samples evaluated: {len(samples)}")
     print(f"mode: {run['mode']}  model: {run['model'] or '(unset)'}  "
           f"provider: {run['provider']}  workers: {run['workers']}  at: {run['generated_at']}")
+    print(f"grouping model: {run['grouping_model'] or '(unset)'}  "
+          f"legitimacy model: {run['legitimacy_model'] or '(unset)'}")
     if run["mode"] == "stub":
         print("WARNING: stub mode (DISASTERLENS_STUB=1) - these numbers are not a "
               "live model baseline.")
@@ -233,6 +391,24 @@ def main() -> int:
                        ("  recall (no coords)", "recall_no_coords")):
         rate, part, whole = dup[key]
         print(f"{label:<28} {_fmt(rate):>7}  {part}/{whole}")
+    print(f"{'grouping type accuracy':<28} "
+          f"{_fmt(grouping_metrics['accuracy']):>7}  "
+          f"{grouping_metrics['correct']}/{grouping_metrics['total']}")
+    print(f"{'legitimacy accuracy':<28} "
+          f"{_fmt(trust['legitimacy']['accuracy']):>7}  "
+          f"{trust['legitimacy']['correct']}/{trust['legitimacy']['total']}")
+    print(f"{'repeat reporter rule':<28} "
+          f"{_fmt(trust['repeat_reporter']['accuracy']):>7}  "
+          f"{trust['repeat_reporter']['correct']}/{trust['repeat_reporter']['total']}")
+    if grouping_errors:
+        print(f"grouping stage failures: {json.dumps(grouping_errors, ensure_ascii=False)}")
+    legitimacy_errors = {
+        sid: result["error"]
+        for sid, result in legitimacy.items()
+        if result["error"]
+    }
+    if legitimacy_errors:
+        print(f"legitimacy stage failures: {json.dumps(legitimacy_errors, ensure_ascii=False)}")
 
     print("\nsafety metrics:")
     print(f"{'trapped recall':<28} {_fmt(trapped_recall):>7}  "
@@ -264,6 +440,10 @@ def main() -> int:
                            "missed": dup["missed"], "false_positives": dup["false_positives"],
                            "missed_no_coords": dup["missed_no_coords"],
                            "false_positives_no_coords": dup["false_positives_no_coords"]},
+             "grouping": grouping_metrics,
+             "grouping_errors": grouping_errors,
+             "trust": trust,
+             "legitimacy_errors": legitimacy_errors,
              "safety": {
                  "trapped_recall": {"correct": len(safety["trapped_caught"]),
                                     "total": len(safety["trapped"]),

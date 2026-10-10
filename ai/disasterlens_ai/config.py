@@ -9,9 +9,17 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://integrate.api.nvidia.com/v1")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "")
+GROUPING_MODEL = os.getenv("GROUPING_MODEL", LLM_MODEL)
+LEGIT_MODEL = os.getenv("LEGIT_MODEL", LLM_MODEL)
+LEGIT_CONFIDENCE_THRESHOLD = float(
+    os.getenv("LEGIT_CONFIDENCE_THRESHOLD", "0.65")
+)
 STUB_MODE = os.getenv("DISASTERLENS_STUB", "0") == "1"
 JUDGE_ENABLED = os.getenv("DISASTERLENS_JUDGE", "1") == "1"
 JUDGE_TIMEOUT = float(os.getenv("DISASTERLENS_JUDGE_TIMEOUT", "5"))
+REPEAT_REPORTER_WINDOW_HOURS = int(
+    os.getenv("REPEAT_REPORTER_WINDOW_HOURS", "168")
+)
 
 MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "1"))
 REQUEST_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "20"))  # seconds

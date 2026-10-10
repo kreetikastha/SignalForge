@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.js"></script>
-  <link rel="stylesheet" href="styles.css?v=20261010-1">
+  <link rel="stylesheet" href="styles.css?v=20261010-trust-v1">
 </head>
 <body>
   <div class="shell">
@@ -99,18 +99,31 @@
 
       <section class="rescue-view" id="rescueView" aria-label="Rescue status dashboard" hidden>
         <div class="rescue-metrics">
-          <article class="rescue-stat rescue-stat--trapped"><span class="rescue-stat-label">Reported trapped</span><strong id="rescueTrappedCount">—</strong><span>reports flagging trapped people</span></article>
-          <article class="rescue-stat rescue-stat--confirmed"><span class="rescue-stat-label">Confirmed rescued</span><strong id="rescueConfirmedCount">—</strong><span>explicit outcome reported</span></article>
-          <article class="rescue-stat rescue-stat--awaiting"><span class="rescue-stat-label">Awaiting confirmation</span><strong id="rescueAwaitingCount">—</strong><span>rescue outcome not reported</span></article>
+          <article class="rescue-stat rescue-stat--active"><span class="rescue-stat-label">Active rescue operations</span><strong id="activeOperationCount">—</strong><span>dispatched or rescue in progress</span></article>
+          <article class="rescue-stat rescue-stat--teams"><span class="rescue-stat-label">Teams dispatched</span><strong id="dispatchedTeamCount">—</strong><span>unique assigned teams in the field</span></article>
+          <article class="rescue-stat rescue-stat--trapped"><span class="rescue-stat-label">People reported trapped</span><strong id="rescueTrappedCount">—</strong><span id="rescueTrappedNote">confirmed counts from reports</span></article>
+          <article class="rescue-stat rescue-stat--confirmed"><span class="rescue-stat-label">Rescues confirmed</span><strong id="rescueConfirmedCount">—</strong><span id="rescueConfirmedNote">people with recorded rescue outcomes</span></article>
+          <article class="rescue-stat rescue-stat--awaiting"><span class="rescue-stat-label">Awaiting verification</span><strong id="rescueAwaitingCount">—</strong><span>reported operations not yet verified</span></article>
         </div>
+        <article class="panel active-operations-panel">
+          <div class="panel-head"><div><h2 class="panel-title">Active response operations</h2><div class="panel-kicker">Dispatched and rescue-active operations; AI analysis never advances operation status.</div></div><span class="queue-count" id="activeOperationRecords">—</span></div>
+          <div class="active-operation-list" id="activeOperationList"></div>
+          <div class="active-operation-empty" id="activeOperationEmpty">No teams are marked dispatched yet. Reported emergencies remain open until an operator records progress.</div>
+        </article>
         <article class="panel rescue-panel">
-          <div class="panel-head"><div><h2 class="panel-title">People &amp; rescue outcomes</h2><div class="panel-kicker">Outcome is marked rescued only when confirmed in incident data.</div></div><span class="queue-count" id="rescueRecordCount">—</span></div>
+          <div class="panel-head rescue-table-head"><div><h2 class="panel-title">Incident operations</h2><div class="panel-kicker">Operation status is operator-recorded and separate from AI analysis and incident review.</div></div><label class="operation-search-label"><span class="sr-only">Search rescue operations</span><input id="operationSearch" type="search" placeholder="Search incidents, hazards, team…" aria-label="Search rescue operations"></label><span class="queue-count" id="rescueRecordCount">—</span></div>
+          <div class="operation-filters" role="group" aria-label="Filter rescue operations">
+            <button class="filter-button active" type="button" data-operation-filter="all">All</button>
+            <button class="filter-button" type="button" data-operation-filter="rescue_active">Rescue active</button>
+            <button class="filter-button" type="button" data-operation-filter="awaiting_dispatch">Awaiting dispatch</button>
+            <button class="filter-button" type="button" data-operation-filter="completed">Completed</button>
+          </div>
           <div class="rescue-table-wrap">
             <table class="rescue-table">
-              <thead><tr><th>Incident</th><th>People trapped</th><th>Rescue outcome</th><th>Location</th><th>Reported</th></tr></thead>
+              <thead><tr><th>Incident / priority</th><th>Operation status</th><th>Assigned team</th><th>Time active</th><th>Last update</th><th>Actions</th></tr></thead>
               <tbody id="rescueTableBody"></tbody>
             </table>
-            <div class="rescue-empty" id="rescueEmpty" hidden><span class="empty-state-icon"><i data-lucide="life-buoy"></i></span><strong id="rescueEmptyTitle">No rescue incidents yet</strong><span id="rescueEmptyMessage">Rescue-related reports will appear here.</span></div>
+            <div class="rescue-empty" id="rescueEmpty" hidden><span class="empty-state-icon"><i data-lucide="life-buoy"></i></span><strong id="rescueEmptyTitle">No incidents to manage</strong><span id="rescueEmptyMessage">Incidents will appear here as reports arrive.</span></div>
           </div>
         </article>
       </section>
@@ -133,12 +146,35 @@
         <div class="field"><label for="reportLocation">Landmark or area (optional)</label><div class="location-entry"><input id="reportLocation" type="text" maxlength="250" placeholder="Street, landmark, or neighborhood"><button class="secondary-button location-button" type="button" id="useLocation"><i data-lucide="locate-fixed"></i><span id="locationButtonLabel">Use my location</span></button></div><div class="field-hint">The API requires latitude and longitude. Capture GPS or enter coordinates below.</div><div class="coordinate-entry"><div class="coordinate-field"><label for="reportLatitude">Latitude</label><input id="reportLatitude" type="number" step="any" min="-90" max="90" required placeholder="e.g. 27.7172"></div><div class="coordinate-field"><label for="reportLongitude">Longitude</label><input id="reportLongitude" type="number" step="any" min="-180" max="180" required placeholder="e.g. 85.3240"></div></div></div>
         <div class="field"><label for="reportImage">Photo (optional)</label><input id="reportImage" type="file" accept="image/jpeg,image/png,image/webp"><div class="field-hint">JPEG, PNG, or WebP · maximum 5 MB. The image is stored with the report and sent for AI analysis.</div><img class="image-preview" id="reportImagePreview" alt="Selected report photo preview" hidden></div>
       </div>
-      <div class="dialog-foot"><span class="field-hint">Submit sends this report to the DisasterLens backend, which saves it and returns it to the incident feed. Verify urgent details.</span><div class="dialog-buttons"><button type="button" class="secondary-button" id="cancelDialog">Cancel</button><button class="primary-button" id="submitReportButton" type="submit"><i data-lucide="send"></i><span>Submit report</span></button></div></div>
+      <div class="dialog-foot"><span class="field-hint">A random browser ID helps flag repeat submissions; the backend stores only its hash. Reports are never rejected by automated credibility checks. Verify urgent details.</span><div class="dialog-buttons"><button type="button" class="secondary-button" id="cancelDialog">Cancel</button><button class="primary-button" id="submitReportButton" type="submit"><i data-lucide="send"></i><span>Submit report</span></button></div></div>
+    </form>
+  </dialog>
+  <dialog id="operationDialog" aria-labelledby="operationDialogTitle">
+    <form id="operationForm">
+      <div class="dialog-head"><div><h2 id="operationDialogTitle">Manage rescue operation</h2><p id="operationDialogSubtitle">Operation progress is recorded by responders, never inferred from AI.</p></div><button type="button" class="icon-button" id="closeOperationDialog" aria-label="Close operation details"><i data-lucide="x"></i></button></div>
+      <div class="dialog-body operation-dialog-body">
+        <div class="operation-brief">
+          <div><span class="detail-label">Current operation</span><strong id="operationCurrentStatus">Reported</strong></div>
+          <div><span class="detail-label">Priority</span><strong id="operationPriority">Unknown</strong></div>
+          <div><span class="detail-label">People reported trapped</span><strong id="operationPeople">Unknown</strong></div>
+          <div><span class="detail-label">AI analysis</span><strong id="operationAiStatus">Not available</strong></div>
+        </div>
+        <div class="operation-evidence"><span class="detail-label">Reported hazards</span><div id="operationHazards">No hazards reported.</div></div>
+        <div><span class="detail-label">Operation timeline</span><ol class="operation-timeline" id="operationTimeline"></ol></div>
+        <div class="operation-form-grid">
+          <div class="field"><label for="operationStatusInput">Next operation status</label><select id="operationStatusInput" required></select></div>
+          <div class="field"><label for="operationAssignedTeam">Assigned team</label><input id="operationAssignedTeam" type="text" maxlength="120" placeholder="Team name or identifier"><span class="field-hint">Required before marking a team dispatched.</span></div>
+          <div class="field" id="peopleRescuedField" hidden><label for="peopleRescuedInput">People confirmed rescued</label><input id="peopleRescuedInput" type="number" min="1" max="100000" step="1" inputmode="numeric" placeholder="Enter confirmed count"><span class="field-hint">Only enter a count explicitly confirmed by responders.</span></div>
+          <div class="field"><label for="operationActor">Updated by</label><input id="operationActor" type="text" maxlength="100" placeholder="Responder name (optional)"></div>
+        </div>
+        <div class="operation-form-message" id="operationFormMessage" role="status"></div>
+      </div>
+      <div class="dialog-foot"><span class="field-hint">This demo records operator-entered progress only; it does not contact or track emergency teams.</span><div class="dialog-buttons"><button type="button" class="secondary-button" id="cancelOperationDialog">Close</button><button class="primary-button" id="saveOperationButton" type="submit"><i data-lucide="save"></i><span>Save operation update</span></button></div></div>
     </form>
   </dialog>
   <div class="toast" id="toast" role="status"><i data-lucide="circle-check"></i><span id="toastMessage">Report added to the priority queue.</span></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="script.js?v=20261010-1"></script>
+  <script src="script.js?v=20261010-trust-v1"></script>
 </body>
 </html>

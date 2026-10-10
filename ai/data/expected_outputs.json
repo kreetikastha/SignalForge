@@ -728,5 +728,113 @@
     "needs_include": [],
     "language": "ne",
     "dup_group": null
+  },
+  "s67": {
+    "incident_type": "flood",
+    "severity_min": 2,
+    "severity_max": 4,
+    "people_trapped": "unknown",
+    "road_blocked": "unknown",
+    "needs_include": [],
+    "language": "en",
+    "dup_group": null,
+    "legitimacy": "genuine",
+    "repeat_reporter": false
+  },
+  "s68": {
+    "incident_type": "flood",
+    "severity_min": 2,
+    "severity_max": 4,
+    "people_trapped": "unknown",
+    "road_blocked": "unknown",
+    "needs_include": [],
+    "language": "en",
+    "dup_group": null,
+    "legitimacy": "genuine",
+    "repeat_reporter": true
+  },
+  "s69": {
+    "incident_type": "fire",
+    "severity_min": 2,
+    "severity_max": 3,
+    "people_trapped": "unknown",
+    "road_blocked": "unknown",
+    "needs_include": [],
+    "language": "en",
+    "dup_group": null,
+    "legitimacy": "genuine",
+    "repeat_reporter": false
+  },
+  "s70": {
+    "incident_type": "other",
+    "severity_min": 1,
+    "severity_max": 2,
+    "people_trapped": "no",
+    "road_blocked": "no",
+    "needs_include": [],
+    "language": "en",
+    "dup_group": null,
+    "legitimacy": "prank",
+    "repeat_reporter": false
+  },
+  "s71": {
+    "incident_type": "other",
+    "severity_min": 1,
+    "severity_max": 2,
+    "people_trapped": "no",
+    "road_blocked": "no",
+    "needs_include": [],
+    "language": "en",
+    "dup_group": null,
+    "legitimacy": "prank",
+    "repeat_reporter": false
+  },
+  "s72": {
+    "incident_type": "other",
+    "severity_min": 1,
+    "severity_max": 2,
+    "people_trapped": "no",
+    "road_blocked": "no",
+    "needs_include": [],
+    "language": "en",
+    "dup_group": null,
+    "legitimacy": "spam",
+    "repeat_reporter": false
+  },
+  "s73": {
+    "incident_type": "other",
+    "severity_min": 1,
+    "severity_max": 2,
+    "people_trapped": "no",
+    "road_blocked": "no",
+    "needs_include": [],
+    "language": "en",
+    "dup_group": null,
+    "legitimacy": "spam",
+    "repeat_reporter": false
+  },
+  "s74": {
+    "incident_type": "other",
+    "severity_min": 1,
+    "severity_max": 3,
+    "people_trapped": "unknown",
+    "road_blocked": "unknown",
+    "needs_include": [],
+    "language": "en",
+    "dup_group": null,
+    "legitimacy": "uncertain",
+    "repeat_reporter": false
+  },
+  "s75": {
+    "incident_type": "medical",
+    "severity_min": 2,
+    "severity_max": 4,
+    "people_trapped": "no",
+    "road_blocked": "unknown",
+    "needs_include": ["medical"],
+    "language": "ne",
+    "dup_group": null,
+    "legitimacy": "genuine",
+    "repeat_reporter": false
   }
 }

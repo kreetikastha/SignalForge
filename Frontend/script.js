@@ -15,10 +15,29 @@
     let activeType = 'all';
     let activeSeverity = 'all';
     let activeStatus = 'all';
+    let activeOperationFilter = 'all';
+    let operationSearch = '';
     let urgencyFirst = true;
     let heatLayer = null;
     const mapRegion = { south: 26, north: 31, west: 79, east: 89 };
     const severityRank = { critical: 4, high: 3, medium: 2, low: 1, unknown: 0 };
+    const operationLabels = {
+      reported: 'Reported',
+      verified: 'Verified',
+      dispatched: 'Dispatched',
+      rescue_active: 'Rescue active',
+      completed: 'Completed',
+      false_alarm: 'False alarm',
+      no_rescue_required: 'No rescue required',
+      unable_to_access: 'Unable to access'
+    };
+    const operationTransitions = {
+      reported: ['verified', 'false_alarm', 'no_rescue_required'],
+      verified: ['dispatched', 'false_alarm', 'no_rescue_required', 'unable_to_access'],
+      dispatched: ['rescue_active', 'false_alarm', 'no_rescue_required', 'unable_to_access'],
+      rescue_active: ['completed', 'unable_to_access']
+    };
+    let operationDialogIncidentId = null;
     const iconFor = (type) => ({ flood: 'waves', landslide: 'mountain', fire: 'flame', earthquake: 'activity', road_blockage: 'construction', medical: 'heart-pulse', other: 'triangle-alert' }[String(type).toLowerCase().replace(/[\s-]+/g, '_')] || 'triangle-alert');
     const urgencyClass = (value) => ['critical', 'high', 'medium', 'low'].includes(value) ? value : 'unknown';
     const hasCoordinates = (report) => Number.isFinite(report.lat) && Number.isFinite(report.lng);
@@ -32,28 +51,58 @@
       if (['no', 'false', '0', 'none'].includes(normalized)) return 'no';
       return 'unknown';
     }
-    function normalizeRescueStatus(item) {
-      if (item.people_rescued === true) return 'rescued';
-      if (item.people_rescued === false) return 'awaiting';
-      const value = item.rescue_status ?? item.rescue_outcome ?? item.rescueStatus;
-      if (value === undefined || value === null || value === '') return null;
-      const normalized = String(value).trim().toLowerCase().replace(/[\s-]+/g, '_');
-      if (['rescued', 'confirmed_rescued', 'completed', 'safe'].includes(normalized)) return 'rescued';
-      if (['underway', 'in_progress', 'en_route', 'active'].includes(normalized)) return 'underway';
-      if (['not_required', 'no_rescue_required', 'not_needed'].includes(normalized)) return 'not_required';
-      if (['awaiting', 'awaiting_confirmation', 'pending', 'not_yet_confirmed', 'not_rescued'].includes(normalized)) return 'awaiting';
-      return 'unknown';
+    function getCredibilityLabel(label) {
+      return ({
+        genuine: 'Credibility signal: plausible',
+        uncertain: 'Credibility signal: uncertain',
+        prank: 'Credibility signal: possible prank',
+        spam: 'Credibility signal: possible spam',
+        unassessed: 'Credibility signal: not assessed'
+      })[label] || 'Credibility signal: not assessed';
     }
-    function rescueOutcome(report) {
-      if (report.rescueStatus === 'rescued') return { label: 'Confirmed rescued', state: 'rescued' };
-      if (report.rescueStatus === 'underway') return { label: 'Response underway', state: 'underway' };
-      if (report.rescueStatus === 'unknown') return { label: 'Unknown', state: 'unknown' };
-      if (report.rescueStatus === 'not_required' || report.peopleTrapped === 'no') return { label: 'No rescue indicated', state: 'not-required' };
-      if (report.peopleTrapped === 'yes') return { label: 'Awaiting confirmation', state: 'awaiting' };
-      return { label: 'Unknown', state: 'unknown' };
+    function operationStatusLabel(status) {
+      return operationLabels[status] || 'Reported';
+    }
+    function operationBadge(status) {
+      const safeStatus = Object.hasOwn(operationLabels, status) ? status : 'reported';
+      return `<span class="operation-status-badge operation-status--${safeStatus}">${operationStatusLabel(safeStatus)}</span>`;
+    }
+    function relativeAge(timestamp) {
+      if (!timestamp) return 'Not updated';
+      const parsed = Date.parse(timestamp);
+      if (!Number.isFinite(parsed)) return 'Time unavailable';
+      const minutes = Math.max(0, Math.floor((Date.now() - parsed) / 60000));
+      if (minutes < 1) return 'Just now';
+      if (minutes < 60) return `${minutes} min ago`;
+      if (minutes < 1440) return `${Math.floor(minutes / 60)} hr ago`;
+      return `${Math.floor(minutes / 1440)} day${Math.floor(minutes / 1440) === 1 ? '' : 's'} ago`;
+    }
+    function elapsedSinceDispatch(timestamp) {
+      if (!timestamp) return 'Not dispatched';
+      const parsed = Date.parse(timestamp);
+      if (!Number.isFinite(parsed)) return 'Time unavailable';
+      const minutes = Math.max(0, Math.floor((Date.now() - parsed) / 60000));
+      if (minutes < 60) return `${minutes}m`;
+      const hours = Math.floor(minutes / 60);
+      return `${hours}h ${minutes % 60}m`;
     }
     const markerIcon = (report) => L.divIcon({ className: '', html: `<div class="map-pin ${urgencyClass(report.severity)}"><span>${({ critical: '!', high: 'H', medium: 'M', low: 'L', unknown: '?' })[urgencyClass(report.severity)]}</span></div>`, iconSize: [28, 34], iconAnchor: [14, 30], popupAnchor: [0, -28] });
     let selectedPreviewUrl = null;
+    const createAnonymousReporterId = () => globalThis.crypto?.randomUUID?.()
+      || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    function getAnonymousReporterId() {
+      const storageKey = 'disasterlens-anonymous-reporter-id';
+      try {
+        const current = localStorage.getItem(storageKey);
+        if (current) return current;
+        const value = createAnonymousReporterId();
+        localStorage.setItem(storageKey, value);
+        return value;
+      } catch {
+        return `session-${createAnonymousReporterId()}`;
+      }
+    }
+    const anonymousReporterId = getAnonymousReporterId();
 
     function getAnalysisLabel(status) {
       return ({
@@ -129,7 +178,7 @@
       mappedReports.forEach((report) => {
         const group = groupedReports([report])[0];
         const corroboration = group.members.length > 1 ? `<br>${group.members.length} corroborating reports` : '';
-        const marker = L.marker([report.lat, report.lng], { icon: markerIcon(report) }).bindPopup(`<div class="popup-title">${escapeHtml(report.type)} · ${report.severity.toUpperCase()}</div><div class="popup-sub">${escapeHtml(report.location)}<br>${escapeHtml(report.title)}${corroboration}</div>`);
+        const marker = L.marker([report.lat, report.lng], { icon: markerIcon(report) }).bindPopup(`<div class="popup-title">${escapeHtml(report.type)} · ${report.severity.toUpperCase()}</div><div class="popup-sub">${operationStatusLabel(report.operationStatus)}${report.assignedTeam ? ` · ${escapeHtml(report.assignedTeam)}` : ''}<br>${escapeHtml(report.location)}<br>${escapeHtml(report.title)}${corroboration}</div>`);
         marker.on('click', () => selectIncident(report.id, false));
         marker.addTo(markerLayer);
         markerById.set(report.id, marker);
@@ -143,17 +192,27 @@
       let queueContent;
       if (shown.length) {
         queueContent = groupedReports(shown).map(({ members, representative: report }) => {
-        const duplicateScore = Math.max(...members.map((member) => member.duplicateConfidence ?? 0));
+        const rootId = report.duplicateOf ?? report.id;
+        const groupMembers = reports.filter((member) => (member.duplicateOf ?? member.id) === rootId);
+        const duplicateScore = Math.max(...groupMembers.map((member) => member.duplicateConfidence ?? 0));
+        const credibilityCounts = new Map();
+        groupMembers.forEach((member) => credibilityCounts.set(member.legitimacyLabel, (credibilityCounts.get(member.legitimacyLabel) || 0) + 1));
+        const credibilitySummary = [...credibilityCounts.entries()]
+          .map(([label, count]) => `${label.replace(/_/g, ' ')}${count > 1 ? ` ×${count}` : ''}`)
+          .join(', ');
+        const repeatReport = groupMembers.find((member) => member.repeatReporter);
         const meta = [
           { label: report.time, title: 'Time since this report was received.' },
           { label: getAnalysisLabel(report.analysisStatus), title: report.analysisStatus === 'mock' ? 'No completed live model analysis was recorded. Treat this preliminary assessment as unverified.' : 'Processing status of the report analysis.' },
           report.urgencyScore === null ? null : { label: `Priority ${report.urgencyScore}/100`, title: 'Triage score based on reported severity and needs; it is not a probability.' },
           report.analysisStatus === 'completed' && report.confidence !== null ? { label: `Model confidence ${report.confidence}%`, title: 'The model’s estimate of its own answer quality; this is not a calibrated probability.' } : null,
-          members.length > 1 ? { label: `${members.length} independent reports${duplicateScore ? ` · ${Math.round(duplicateScore * 100)}% match` : ''}`, title: report.duplicateReason || 'Reports grouped as possibly describing the same incident.' } : null
+          { label: `Credibility signals: ${credibilitySummary || 'unassessed'}`, className: `trust-chip credibility-${groupMembers.some((member) => ['spam', 'prank'].includes(member.legitimacyLabel)) ? 'uncertain' : report.legitimacyLabel}`, title: `${groupMembers.map((member) => `#${member.id}: ${member.legitimacyReason || 'Automated assessment unavailable'}`).join(' · ')}. Advisory only; this never changes urgency.` },
+          repeatReport ? { label: `Repeat reporter · ${repeatReport.reporterRepeatCount + 1} reports`, className: 'trust-chip repeat-reporter-flag', title: 'At least one anonymous reporter identifier in this group was used on an earlier report within the configured repeat window. This alone is not evidence of fraud.' } : null,
+          groupMembers.length > 1 ? { label: `Group #${report.incidentGroupId} · ${groupMembers.length} reports${duplicateScore ? ` · ${Math.round(duplicateScore * 100)}% match` : ''}`, className: 'trust-chip incident-group-flag', title: report.duplicateReason || 'Reports grouped as possibly describing the same incident.' } : null
         ].filter(Boolean);
         const imageUrl = getImageUrl(report.imageUrl);
         const photo = imageUrl ? `<img class="incident-thumbnail" src="${escapeHtml(imageUrl)}" alt="Photo attached to report ${escapeHtml(report.id)}" loading="lazy">` : '';
-        return `<button class="incident-row ${report.id === selectedId ? 'selected' : ''}" data-id="${escapeHtml(report.id)}" aria-label="${escapeHtml(report.type)}, ${escapeHtml(report.severity)} severity, ${escapeHtml(report.location)}">${photo}<div class="incident-topline"><span class="incident-type"><i data-lucide="${iconFor(report.type)}"></i>${escapeHtml(report.type)}</span><span class="severity ${urgencyClass(report.severity)}">${escapeHtml(report.severity)}</span></div><div class="incident-location">${escapeHtml(report.title)} · ${escapeHtml(report.location)}</div><div class="incident-meta">${meta.map((item) => `<span title="${escapeHtml(item.title)}">${escapeHtml(item.label)}</span>`).join('<span aria-hidden="true">·</span>')}</div></button>`;
+        return `<button class="incident-row ${report.id === selectedId ? 'selected' : ''}" data-id="${escapeHtml(report.id)}" aria-label="${escapeHtml(report.type)}, ${escapeHtml(report.severity)} severity, ${operationStatusLabel(report.operationStatus)}, ${escapeHtml(report.location)}">${photo}<div class="incident-topline"><span class="incident-type"><i data-lucide="${iconFor(report.type)}"></i>${escapeHtml(report.type)}</span><span class="severity ${urgencyClass(report.severity)}">${escapeHtml(report.severity)}</span>${operationBadge(report.operationStatus)}</div><div class="incident-location">${escapeHtml(report.title)} · ${escapeHtml(report.location)}</div><div class="incident-meta">${meta.map((item) => `<span${item.className ? ` class="${escapeHtml(item.className)}"` : ''} title="${escapeHtml(item.title)}">${escapeHtml(item.label)}</span>`).join('<span aria-hidden="true">·</span>')}</div></button>`;
         }).join('');
       } else if (loadingIncidents) {
         queueContent = '<div class="empty-state"><strong>Loading incidents</strong><span>Connecting to the incident API.</span></div>';
@@ -206,42 +265,97 @@
       const hasSelection = reports.some((report) => report.id === selectedId);
       document.getElementById('zoomButton').disabled = !hasSelection;
       document.getElementById('copyCoordinatesButton').disabled = !hasSelection || !hasCoordinates(reports.find((report) => report.id === selectedId));
-      const rescueCases = reports.filter((report) => report.peopleTrapped === 'yes' && !['rescued', 'not_required'].includes(report.rescueStatus)).length;
-      document.getElementById('rescueNavCount').textContent = dataAvailable ? String(rescueCases).padStart(2, '0') : '—';
+      const activeOperations = incidentGroups().filter((group) => {
+        const operationStatus = group.find((report) => report.id === (group[0].duplicateOf ?? group[0].id))?.operationStatus ?? group[0].operationStatus;
+        return ['dispatched', 'rescue_active'].includes(operationStatus);
+      }).length;
+      document.getElementById('rescueNavCount').textContent = dataAvailable ? String(activeOperations).padStart(2, '0') : '—';
       renderRescueView(dataAvailable);
     }
     function renderRescueView(dataAvailable) {
-      const rescuedCount = reports.filter((report) => report.rescueStatus === 'rescued').length;
-      const trappedCount = reports.filter((report) => report.peopleTrapped === 'yes').length;
-      const awaitingCount = reports.filter((report) => report.rescueStatus === 'awaiting' || (report.peopleTrapped === 'yes' && report.rescueStatus === null)).length;
-      const countText = (count) => dataAvailable ? String(count).padStart(2, '0') : '—';
-      document.getElementById('rescueTrappedCount').textContent = countText(trappedCount);
-      document.getElementById('rescueConfirmedCount').textContent = countText(rescuedCount);
-      document.getElementById('rescueAwaitingCount').textContent = countText(awaitingCount);
-      document.getElementById('rescueRecordCount').textContent = dataAvailable ? String(reports.length).padStart(2, '0') : '—';
-
+      const groups = groupedReports(reports).map(({ members, representative }) => ({
+        ...representative,
+        members
+      }));
+      const incidents = groups.sort((left, right) => {
+        const priority = (right.urgencyScore ?? -1) - (left.urgencyScore ?? -1);
+        return priority || (right.receivedAt ?? 0) - (left.receivedAt ?? 0);
+      });
+      const search = operationSearch.trim().toLowerCase();
+      const visible = incidents.filter((incident) => {
+        if (activeOperationFilter === 'rescue_active' && incident.operationStatus !== 'rescue_active') return false;
+        if (activeOperationFilter === 'awaiting_dispatch' && incident.operationStatus !== 'verified') return false;
+        if (activeOperationFilter === 'completed' && !['completed', 'false_alarm', 'no_rescue_required', 'unable_to_access'].includes(incident.operationStatus)) return false;
+        if (!search) return true;
+        return [
+          incident.id,
+          incident.type,
+          incident.title,
+          incident.location,
+          incident.assignedTeam,
+          ...incident.hazards
+        ].some((value) => String(value ?? '').toLowerCase().includes(search));
+      });
+      const active = incidents.filter((incident) => ['dispatched', 'rescue_active'].includes(incident.operationStatus));
+      document.getElementById('activeOperationRecords').textContent = dataAvailable ? String(active.length) : '—';
       const empty = document.getElementById('rescueEmpty');
       const tableBody = document.getElementById('rescueTableBody');
+      const activeList = document.getElementById('activeOperationList');
+      const activeEmpty = document.getElementById('activeOperationEmpty');
       tableBody.innerHTML = '';
+      activeList.innerHTML = '';
       if (!dataAvailable || reports.length === 0) {
         empty.hidden = false;
-        document.getElementById('rescueEmptyTitle').textContent = dataAvailable ? 'No incidents to track' : 'Rescue status not loaded';
+        document.getElementById('rescueEmptyTitle').textContent = dataAvailable ? 'No incidents to manage' : 'Rescue status not loaded';
         document.getElementById('rescueEmptyMessage').textContent = dataAvailable
-          ? 'Rescue indicators will appear here when included in an incident report.'
+          ? 'New reports will appear here as operations to verify.'
           : 'Refresh the incident feed to retrieve rescue-related reports.';
+        activeEmpty.hidden = false;
+        activeEmpty.textContent = dataAvailable
+          ? 'No teams are marked dispatched yet. Reported emergencies remain open until an operator records progress.'
+          : 'Active operations are unavailable while the incident feed is disconnected.';
         return;
       }
 
+      activeEmpty.hidden = active.length > 0;
+      activeEmpty.textContent = 'No teams are marked dispatched yet. Reported emergencies remain open until an operator records progress.';
+      activeList.innerHTML = active.map((incident) => {
+        const team = incident.assignedTeam || 'Team not assigned';
+        const elapsed = elapsedSinceDispatch(incident.dispatchedAt);
+        const nextAction = incident.operationStatus === 'dispatched'
+          ? 'Next: start rescue'
+          : 'Next: confirm outcome';
+        const trapped = incident.peopleTrapped === 'yes'
+          ? (incident.peopleTrappedCount === null ? 'Trapped · count unknown' : `${incident.peopleTrappedCount} reported trapped`)
+          : incident.peopleTrapped === 'no' ? 'No trapped people reported' : 'Trapped status unknown';
+        return `<article class="active-operation-card"><div class="active-operation-card-top"><span class="active-operation-card-title">${escapeHtml(incident.type)} · #${escapeHtml(incident.id)}</span>${operationBadge(incident.operationStatus)}</div><div class="active-operation-card-location">${escapeHtml(incident.location)} · ${escapeHtml(trapped)}</div><div class="active-operation-card-meta"><span>${escapeHtml(team)} · ${escapeHtml(elapsed)} · Updated ${escapeHtml(relativeAge(incident.operationUpdatedAt || new Date(incident.receivedAt).toISOString()))} · ${escapeHtml(nextAction)}</span><button class="secondary-button operation-manage-button" type="button" data-manage-operation="${escapeHtml(incident.id)}">Manage operation</button></div></article>`;
+      }).join('');
+
       empty.hidden = true;
-      tableBody.innerHTML = reports.map((report) => {
-        const outcome = rescueOutcome(report);
-        const trappedLabel = report.peopleTrapped === 'yes' ? 'Yes' : report.peopleTrapped === 'no' ? 'No' : 'Unknown';
-        return `<tr><td><button class="rescue-incident-link" data-rescue-incident="${escapeHtml(report.id)}">${escapeHtml(report.type)} · ${escapeHtml(report.id)}</button><small>${escapeHtml(report.title)}</small></td><td><span class="rescue-flag rescue-flag--${report.peopleTrapped}">${trappedLabel}</span></td><td><span class="rescue-outcome rescue-outcome--${outcome.state}">${outcome.label}</span></td><td>${escapeHtml(report.location)}</td><td>${escapeHtml(report.time)}</td></tr>`;
+      document.getElementById('rescueRecordCount').textContent = `${visible.length} / ${incidents.length}`;
+      tableBody.innerHTML = visible.map((incident) => {
+        const trapped = incident.peopleTrapped === 'yes'
+          ? (incident.peopleTrappedCount === null ? 'Trapped · count unknown' : `${incident.peopleTrappedCount} trapped`)
+          : incident.peopleTrapped === 'no' ? 'No trapped people reported' : 'Trapped status unknown';
+        const activeTime = ['dispatched', 'rescue_active', 'completed', 'unable_to_access'].includes(incident.operationStatus)
+          ? elapsedSinceDispatch(incident.dispatchedAt)
+          : '—';
+        const lastUpdated = incident.operationUpdatedAt || new Date(incident.receivedAt).toISOString();
+        const priority = `<span class="severity ${urgencyClass(incident.severity)}">${escapeHtml(incident.severity)}</span><span class="rescue-trapped-note">${escapeHtml(trapped)}</span>`;
+        return `<tr><td><button class="rescue-incident-link" data-rescue-incident="${escapeHtml(incident.id)}">${escapeHtml(incident.type)} · #${escapeHtml(incident.id)}</button><small>${escapeHtml(incident.title)} · ${escapeHtml(incident.location)}</small><div class="rescue-priority">${priority}</div></td><td>${operationBadge(incident.operationStatus)}</td><td>${escapeHtml(incident.assignedTeam || 'Not assigned')}</td><td>${escapeHtml(activeTime)}</td><td title="${escapeHtml(lastUpdated)}">${escapeHtml(relativeAge(lastUpdated))}</td><td><button class="secondary-button operation-manage-button" type="button" data-manage-operation="${escapeHtml(incident.id)}">Manage operation</button></td></tr>`;
       }).join('');
       tableBody.querySelectorAll('[data-rescue-incident]').forEach((button) => button.addEventListener('click', () => {
         selectIncident(button.dataset.rescueIncident, false);
         document.querySelector('.nav-link[data-view="incidents"]').click();
       }));
+      document.querySelectorAll('[data-manage-operation]').forEach((button) => button.addEventListener('click', () => {
+        openOperationDialog(button.dataset.manageOperation);
+      }));
+      if (!visible.length) {
+        empty.hidden = false;
+        document.getElementById('rescueEmptyTitle').textContent = incidents.length ? 'No matching operations' : 'No incidents to manage';
+        document.getElementById('rescueEmptyMessage').textContent = incidents.length ? 'Try a different status filter or search term.' : 'New reports will appear here as operations to verify.';
+      }
     }
     function selectIncident(id, pan) {
       const report = reports.find((item) => item.id === id);
@@ -265,9 +379,21 @@
         : report.analysisStatus === 'completed'
           ? `AI-generated assessment${report.needsReview ? ' · human review recommended' : ''}. Priority is a triage score, not a probability. Confidence is the model’s estimate, not a calibrated guarantee.`
           : 'Assessment is not verified. Human review is recommended.';
-      document.getElementById('detailEvidence').textContent = report.flags.length
-        ? `Safety flags: ${report.flags.join(', ')}`
-        : report.priorityReason ? `Why this priority: ${report.priorityReason}` : '';
+      const trustDetails = [
+        `Credibility signal: ${getCredibilityLabel(report.legitimacyLabel)}.`,
+        report.legitimacyReason || null,
+        report.repeatReporter
+          ? `Repeat reporter: ${report.reporterRepeatCount} earlier report(s) within the configured window.`
+          : null,
+        report.supportingReports > 1
+          ? `Incident group #${report.incidentGroupId}: ${report.supportingReports} reports.`
+          : null
+      ].filter(Boolean);
+      document.getElementById('detailEvidence').textContent = [
+        report.flags.length ? `Safety flags: ${report.flags.join(', ')}` : null,
+        report.priorityReason ? `Why this priority: ${report.priorityReason}` : null,
+        ...trustDetails
+      ].filter(Boolean).join(' · ');
       const corroboratingReports = groupedReports([report])[0].members;
       const reportDetails = document.getElementById('corroboratingReports');
       reportDetails.innerHTML = corroboratingReports.length > 1
@@ -348,6 +474,145 @@
         })[current.status];
       }
     }
+    function renderOperationTimeline(detail) {
+      const timeline = document.getElementById('operationTimeline');
+      const events = Array.isArray(detail.history) ? detail.history : [];
+      const latestByStatus = new Map();
+      events.forEach((event) => {
+        if (event.status) latestByStatus.set(event.status, event);
+      });
+      const completedStatuses = new Set(['reported', ...events.map((event) => event.status), detail.operation_status]);
+      const timelineSteps = [
+        { status: 'reported', label: 'Report received', time: detail.received_at },
+        { status: 'verified', label: 'Incident verified' },
+        { status: 'dispatched', label: 'Team dispatched', time: detail.dispatched_at },
+        { status: 'rescue_active', label: 'Rescue in progress' },
+        { status: 'completed', label: 'Rescue outcome confirmed' }
+      ];
+      const rows = timelineSteps.map((step) => {
+        const event = latestByStatus.get(step.status);
+        const timestamp = event?.changed_at || step.time;
+        const actor = event?.changed_by ? ` · ${event.changed_by}` : '';
+        const time = timestamp ? new Date(timestamp).toLocaleString() : 'Not recorded';
+        return `<li class="${completedStatuses.has(step.status) ? 'is-complete' : ''}"><span>${escapeHtml(step.label)}${actor ? `<small>${escapeHtml(actor)}</small>` : ''}</span><time>${escapeHtml(time)}</time></li>`;
+      });
+      const outcomeStates = ['false_alarm', 'no_rescue_required', 'unable_to_access'];
+      const outcomeEvent = [...events].reverse().find((event) => outcomeStates.includes(event.status));
+      if (outcomeEvent) {
+        rows.push(`<li class="is-complete"><span>${escapeHtml(operationStatusLabel(outcomeEvent.status))}<small>Recorded by ${escapeHtml(outcomeEvent.changed_by)}</small></span><time>${escapeHtml(new Date(outcomeEvent.changed_at).toLocaleString())}</time></li>`);
+      }
+      timeline.innerHTML = rows.join('');
+    }
+    async function openOperationDialog(incidentId) {
+      const dialog = document.getElementById('operationDialog');
+      const saveButton = document.getElementById('saveOperationButton');
+      document.getElementById('operationFormMessage').dataset.terminal = 'false';
+      saveButton.disabled = true;
+      document.getElementById('operationFormMessage').textContent = 'Loading saved operation details…';
+      try {
+        const response = await fetch(`${apiBaseUrl}/incidents/${encodeURIComponent(incidentId)}/operation`, {
+          headers: { Accept: 'application/json' }
+        });
+        const detail = await response.json();
+        if (!response.ok) throw new Error(detail.detail || `API returned HTTP ${response.status}`);
+        operationDialogIncidentId = String(detail.incident_id);
+        const status = detail.operation_status || 'reported';
+        const terminal = ['completed', 'false_alarm', 'no_rescue_required', 'unable_to_access'].includes(status);
+        document.getElementById('operationDialogTitle').textContent = `${detail.incident_type.replaceAll('_', ' ')} · #${detail.incident_id}`;
+        document.getElementById('operationDialogSubtitle').textContent = `${detail.location_text || 'Location not specified'} · ${detail.supporting_reports} report${detail.supporting_reports === 1 ? '' : 's'} in this incident`;
+        document.getElementById('operationCurrentStatus').textContent = operationStatusLabel(status);
+        document.getElementById('operationPriority').textContent = String(detail.severity || 'unknown').toUpperCase();
+        document.getElementById('operationPeople').textContent = detail.people_trapped === 'yes'
+          ? (Number.isInteger(detail.people_trapped_count) ? `${detail.people_trapped_count} reported trapped` : 'Reported · count unknown')
+          : detail.people_trapped === 'no' ? 'None reported' : 'Unknown';
+        document.getElementById('operationAiStatus').textContent = `Analysis ${getAnalysisLabel(detail.analysis_status || 'unknown')}`;
+        document.getElementById('operationHazards').innerHTML = Array.isArray(detail.hazards) && detail.hazards.length
+          ? detail.hazards.map((hazard) => `<span class="evidence-tag">${escapeHtml(hazard)}</span>`).join(' ')
+          : 'No hazards reported.';
+        renderOperationTimeline(detail);
+
+        const statusSelect = document.getElementById('operationStatusInput');
+        const selectableStatuses = [status, ...(operationTransitions[status] || [])];
+        statusSelect.innerHTML = selectableStatuses.map((value) =>
+          `<option value="${value}">${escapeHtml(operationStatusLabel(value))}</option>`
+        ).join('');
+        statusSelect.value = status;
+        statusSelect.disabled = terminal;
+        const teamInput = document.getElementById('operationAssignedTeam');
+        teamInput.value = detail.assigned_team || '';
+        teamInput.disabled = terminal;
+        const actorInput = document.getElementById('operationActor');
+        actorInput.value = '';
+        actorInput.disabled = terminal;
+        const countInput = document.getElementById('peopleRescuedInput');
+        countInput.value = detail.people_rescued ?? '';
+        countInput.disabled = terminal;
+        document.getElementById('operationFormMessage').textContent = terminal
+          ? `Outcome recorded: ${operationStatusLabel(status)}${detail.rescue_outcome === 'rescued' ? ` · ${detail.people_rescued} people confirmed rescued` : ''}. Terminal outcomes cannot be changed.`
+          : 'AI analysis and incident review do not advance this rescue-operation workflow.';
+        saveButton.disabled = terminal;
+        document.getElementById('operationFormMessage').dataset.terminal = String(terminal);
+        updateRescueCountField();
+        if (!dialog.open) dialog.showModal();
+      } catch (error) {
+        notify(`Could not load rescue operation: ${error.message}`);
+      } finally {
+        if (!document.getElementById('operationFormMessage').dataset.terminal || document.getElementById('operationFormMessage').dataset.terminal === 'false') {
+          saveButton.disabled = false;
+        }
+      }
+    }
+    function updateRescueCountField() {
+      const completed = document.getElementById('operationStatusInput').value === 'completed';
+      const field = document.getElementById('peopleRescuedField');
+      const input = document.getElementById('peopleRescuedInput');
+      field.hidden = !completed;
+      input.required = completed;
+      if (!completed) input.value = '';
+      const message = document.getElementById('operationFormMessage');
+      if (completed && message.dataset.terminal !== 'true') {
+        message.textContent = 'Completion requires an explicitly confirmed rescued-person count.';
+      }
+    }
+    async function saveOperationUpdate(event) {
+      event.preventDefault();
+      if (!operationDialogIncidentId) return;
+      const status = document.getElementById('operationStatusInput').value;
+      const assignedTeam = document.getElementById('operationAssignedTeam').value.trim();
+      const saveButton = document.getElementById('saveOperationButton');
+      const message = document.getElementById('operationFormMessage');
+      if (['dispatched', 'rescue_active'].includes(status) && !assignedTeam) {
+        message.textContent = 'Assign a response team before dispatching or activating a rescue.';
+        document.getElementById('operationAssignedTeam').focus();
+        return;
+      }
+      saveButton.disabled = true;
+      message.textContent = 'Saving operation update…';
+      const payload = {
+        operation_status: status,
+        assigned_team: assignedTeam || null,
+        changed_by: document.getElementById('operationActor').value.trim() || 'local responder'
+      };
+      if (status === 'completed') payload.people_rescued = Number(document.getElementById('peopleRescuedInput').value);
+      try {
+        const response = await fetch(`${apiBaseUrl}/incidents/${encodeURIComponent(operationDialogIncidentId)}/operation`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || `API returned HTTP ${response.status}`);
+        document.getElementById('operationDialog').close();
+        notify(`Operation #${result.incident_id}: ${operationStatusLabel(result.operation_status)} saved.`);
+        await loadIncidents(false);
+        await loadSituation();
+      } catch (error) {
+        message.textContent = `Update failed: ${error.message}`;
+        notify(`Could not update rescue operation: ${error.message}`);
+      } finally {
+        saveButton.disabled = false;
+      }
+    }
     function refreshHeatLayer() {
       if (heatLayer) map.removeLayer(heatLayer);
       const mappedReports = reports.filter(isInMapRegion);
@@ -406,6 +671,16 @@
           duplicateOf: item.duplicate_of === null || item.duplicate_of === undefined ? null : String(item.duplicate_of),
           duplicateConfidence: item.duplicate_similarity === undefined || item.duplicate_similarity === null ? null : Number(item.duplicate_similarity),
           duplicateReason: item.duplicate_reason ?? null,
+          incidentGroupId: String(item.incident_group_id ?? item.duplicate_of ?? item.incident_id ?? item.id ?? ''),
+          reporterRepeatCount: Number.isInteger(item.reporter_repeat_count) ? item.reporter_repeat_count : 0,
+          repeatReporter: item.repeat_reporter === true,
+          legitimacyLabel: ['genuine', 'uncertain', 'prank', 'spam', 'unassessed'].includes(item.legitimacy_label)
+            ? item.legitimacy_label
+            : 'unassessed',
+          legitimacyConfidence: item.legitimacy_confidence === undefined || item.legitimacy_confidence === null
+            ? null
+            : Number(item.legitimacy_confidence),
+          legitimacyReason: item.legitimacy_reason ?? null,
           imageUrl: item.image_url ?? null,
           analysisStatus: String(item.analysis_status ?? 'unknown'),
           status: String(item.status ?? 'new').toLowerCase(),
@@ -414,13 +689,21 @@
           priorityReason: item.priority_reason ?? null,
           peopleTrapped: normalizePeopleTrapped(item.people_trapped),
           peopleAffected: Number.isInteger(item.people_affected) ? item.people_affected : null,
+            peopleTrappedCount: Number.isInteger(item.people_trapped_count) ? item.people_trapped_count : null,
           injuriesReported: Number.isInteger(item.injuries_reported) ? item.injuries_reported : null,
           hazards: Array.isArray(item.hazards) ? item.hazards.map(String) : [],
           vulnerableGroups: Array.isArray(item.vulnerable_groups) ? item.vulnerable_groups.map(String) : [],
           needs: Array.isArray(item.needs) ? item.needs.map(String) : [],
           flags: Array.isArray(item.flags) ? item.flags.map(String) : [],
           needsReview: item.needs_review === true,
-          rescueStatus: normalizeRescueStatus(item),
+          operationStatus: Object.hasOwn(operationLabels, String(item.operation_status ?? 'reported').toLowerCase())
+            ? String(item.operation_status ?? 'reported').toLowerCase()
+            : 'reported',
+          assignedTeam: item.assigned_team ?? null,
+          dispatchedAt: item.dispatched_at ?? null,
+          operationUpdatedAt: item.last_updated ?? item.operation_updated_at ?? null,
+          rescueOutcome: item.rescue_outcome ?? null,
+          peopleRescued: Number.isInteger(item.people_rescued) ? item.people_rescued : null,
           roadBlocked: item.road_blocked ?? 'unknown',
           supportingReports: Number(item.supporting_reports ?? 1),
           description,
@@ -441,6 +724,7 @@
       document.getElementById('situationUpdated').textContent = `Updated ${new Date(data.generated_at).toLocaleTimeString()} · nearby reports grouped within 3 km`;
       document.getElementById('situationTotals').textContent = `${data.total_reports} / ${data.distinct_incidents}`;
       document.getElementById('situationUrgent').textContent = `${data.critical_incidents} / ${data.high_priority_incidents}`;
+      renderRescueMetrics(data.rescue_operations);
       const typeEntries = Object.entries(data.type_counts || {}).slice(0, 5);
       document.getElementById('situationTypes').innerHTML = typeEntries.length
         ? typeEntries.map(([type, count]) => `<span>${escapeHtml(type.replace(/[_-]+/g, ' '))} <strong>${count}</strong></span>`).join('')
@@ -463,6 +747,25 @@
         selectIncident(id, true);
       }));
     }
+    function renderRescueMetrics(summary) {
+      const metrics = summary || {};
+      const metricValue = (key) => Number.isFinite(metrics[key]) ? String(metrics[key]) : '—';
+      document.getElementById('activeOperationCount').textContent = metricValue('active_operations');
+      document.getElementById('dispatchedTeamCount').textContent = metricValue('teams_dispatched');
+      const trappedKnown = metrics.people_reported_trapped;
+      const hasUnquantified = Number(metrics.trapped_count_unknown) > 0;
+      document.getElementById('rescueTrappedCount').textContent = Number.isFinite(trappedKnown)
+        ? trappedKnown === 0 && hasUnquantified ? '—' : String(trappedKnown)
+        : '—';
+      document.getElementById('rescueAwaitingCount').textContent = metricValue('awaiting_verification');
+      document.getElementById('rescueConfirmedCount').textContent = metricValue('people_rescued_confirmed');
+      document.getElementById('rescueTrappedNote').textContent = Number.isFinite(metrics.trapped_incidents)
+        ? `${metrics.trapped_incidents} incidents · ${metrics.trapped_count_unknown || 0} without a count`
+        : 'Reported counts only';
+      document.getElementById('rescueConfirmedNote').textContent = Number.isFinite(metrics.confirmed_rescue_incidents)
+        ? `${metrics.confirmed_rescue_incidents} incidents with confirmed outcomes`
+        : 'Explicitly confirmed rescues only';
+    }
     async function loadSituation() {
       const updated = document.getElementById('situationUpdated');
       try {
@@ -475,6 +778,7 @@
         document.getElementById('situationUrgent').textContent = '—';
         document.getElementById('situationTypes').textContent = 'Could not load incident types.';
         document.getElementById('situationHotspots').textContent = 'Could not load nearby clusters.';
+        renderRescueMetrics(null);
       }
     }
     async function generateBriefing() {
@@ -585,6 +889,19 @@
     });
     document.getElementById('briefingButton').addEventListener('click', generateBriefing);
     document.getElementById('updateStatusButton').addEventListener('click', updateSelectedStatus);
+    document.querySelectorAll('[data-operation-filter]').forEach((button) => button.addEventListener('click', () => {
+      activeOperationFilter = button.dataset.operationFilter;
+      document.querySelectorAll('[data-operation-filter]').forEach((item) => item.classList.toggle('active', item === button));
+      renderRescueView(document.getElementById('apiStatus').dataset.state === 'connected');
+    }));
+    document.getElementById('operationSearch').addEventListener('input', (event) => {
+      operationSearch = event.currentTarget.value;
+      renderRescueView(document.getElementById('apiStatus').dataset.state === 'connected');
+    });
+    document.getElementById('operationStatusInput').addEventListener('change', updateRescueCountField);
+    document.getElementById('operationForm').addEventListener('submit', saveOperationUpdate);
+    document.getElementById('closeOperationDialog').addEventListener('click', () => document.getElementById('operationDialog').close());
+    document.getElementById('cancelOperationDialog').addEventListener('click', () => document.getElementById('operationDialog').close());
     document.getElementById('notificationsButton').addEventListener('click', () => notify(reports.length ? `${reports.length} report${reports.length === 1 ? '' : 's'} in the local queue.` : 'No notifications yet. Reports submitted here will appear in the queue.'));
     function openReportDialog() {
       document.getElementById('reportDialog').showModal();
@@ -667,6 +984,7 @@
         formData.append('description', locationInput.value.trim() ? `${text.trim()}\n\nReported location: ${locationInput.value.trim()}` : text.trim());
         formData.append('latitude', String(latitude));
         formData.append('longitude', String(longitude));
+        formData.append('reporter_id', anonymousReporterId);
         const imageFile = document.getElementById('reportImage').files[0];
         if (imageFile) formData.append('image', imageFile);
         const response = await fetch(`${apiBaseUrl}/reports/upload`, {
@@ -734,5 +1052,9 @@
     renderQueue();
     loadIncidents();
     loadSituation();
+    window.setInterval(() => {
+      loadIncidents(false);
+      loadSituation();
+    }, 30000);
     if (window.lucide) lucide.createIcons();
     window.setTimeout(() => map.invalidateSize(), 150);

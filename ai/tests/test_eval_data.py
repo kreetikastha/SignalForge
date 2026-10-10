@@ -30,6 +30,15 @@ def test_ids_match_exactly():
     ids = [s["id"] for s in _samples()]
     assert len(ids) == len(set(ids))
     assert set(ids) == set(_expected())
+    labeled = [
+        sample for sample in _samples()
+        if _expected()[sample["id"]].get("legitimacy")
+    ]
+    assert len(labeled) >= 8
+    assert all(sample.get("reporter_id") for sample in labeled)
+    assert {
+        _expected()[sample["id"]]["legitimacy"] for sample in labeled
+    } >= {"genuine", "prank", "spam"}
 
 
 def test_at_least_54_samples():

@@ -125,6 +125,7 @@ def to_backend_dict(
         "location_text": analysis.location_text,
         "needs": analysis.needs,
         "people_affected": analysis.people_affected,
+        "people_trapped_count": analysis.people_trapped_count,
         "injuries_reported": analysis.injuries_reported,
         "hazards": analysis.hazards,
         "vulnerable_groups": analysis.vulnerable_groups,

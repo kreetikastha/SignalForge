@@ -1,7 +1,9 @@
 import json
+import hashlib
 import logging
 import math
-from datetime import datetime, timezone
+from collections import defaultdict, deque
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Literal, TypedDict
@@ -16,10 +18,15 @@ from starlette.responses import FileResponse, Response
 
 from ai_service import analyze_report
 from database import Base, SessionLocal, engine
-from models import IncidentStatusEvent, Report
+from models import IncidentStatusEvent, Report, RescueOperationEvent
 logger = logging.getLogger(__name__)
 
-from disasterlens_ai import find_duplicate, score_urgency
+from disasterlens_ai import (
+    assess_legitimacy,
+    find_duplicate,
+    group_report,
+    score_urgency,
+)
 from disasterlens_ai import config as ai_config
 from disasterlens_ai.analyzer import _extract_json
 from disasterlens_ai.client import chat
@@ -49,7 +56,12 @@ new_columns = {
     "duplicate_of": "INTEGER",
     "duplicate_similarity": "FLOAT",
     "duplicate_reason": "TEXT",
+    "reporter_hash": "VARCHAR",
+    "legitimacy_label": "VARCHAR DEFAULT 'unassessed' NOT NULL",
+    "legitimacy_confidence": "FLOAT",
+    "legitimacy_reason": "TEXT",
     "people_affected": "INTEGER",
+    "people_trapped_count": "INTEGER",
     "injuries_reported": "INTEGER",
     "hazards": "JSON",
     "vulnerable_groups": "JSON",
@@ -61,6 +73,12 @@ new_columns = {
     "status": "VARCHAR DEFAULT 'new' NOT NULL",
     "status_updated_at": "TIMESTAMP",
     "status_updated_by": "VARCHAR",
+    "operation_status": "VARCHAR DEFAULT 'reported' NOT NULL",
+    "assigned_team": "VARCHAR",
+    "dispatched_at": "DATETIME",
+    "last_updated": "DATETIME",
+    "rescue_outcome": "VARCHAR",
+    "people_rescued": "INTEGER",
 }
 
 with engine.begin() as connection:
@@ -77,6 +95,17 @@ with engine.begin() as connection:
                     f"{column_name} {column_type}"
                 )
             )
+
+    if (
+        "operation_updated_at" in existing_columns
+        and "last_updated" not in existing_columns
+    ):
+        connection.execute(
+            text(
+                "UPDATE reports SET last_updated = operation_updated_at "
+                "WHERE last_updated IS NULL"
+            )
+        )
 
 
 app = FastAPI(
@@ -98,12 +127,29 @@ class ReportCreate(BaseModel):
     description: str = Field(min_length=5, max_length=5000)
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
+    reporter_id: str | None = Field(default=None, min_length=8, max_length=128)
 
 
 class StatusUpdate(BaseModel):
     status: Literal[
         "under_review", "verified", "response_in_progress", "resolved"
     ]
+    changed_by: str = Field(default="local responder", min_length=1, max_length=100)
+
+
+class RescueOperationUpdate(BaseModel):
+    operation_status: Literal[
+        "reported",
+        "verified",
+        "dispatched",
+        "rescue_active",
+        "completed",
+        "false_alarm",
+        "no_rescue_required",
+        "unable_to_access",
+    ] | None = None
+    assigned_team: str | None = Field(default=None, max_length=120)
+    people_rescued: int | None = Field(default=None, ge=1, le=100000)
     changed_by: str = Field(default="local responder", min_length=1, max_length=100)
 
 
@@ -126,6 +172,7 @@ class NormalizedAnalysis(TypedDict):
     needs: list[str]
     language: Literal["ne", "en", "other"]
     people_affected: int | None
+    people_trapped_count: int | None
     injuries_reported: int | None
     hazards: list[str]
     vulnerable_groups: list[str]
@@ -363,6 +410,9 @@ def _normalize_ai_result(
             else "other"
         ),
         "people_affected": _normalize_people_affected(people_affected_value),
+        "people_trapped_count": _normalize_people_affected(
+            result.get("people_trapped_count")
+        ),
         "injuries_reported": _normalize_people_affected(result.get("injuries_reported")),
         "hazards": _normalize_str_list(result.get("hazards")),
         "vulnerable_groups": _normalize_str_list(vulnerable_groups_value),
@@ -394,6 +444,9 @@ def _analysis_from_result(result: NormalizedAnalysis) -> ReportAnalysis:
         location_text=result["location_text"],
         severity=_severity_level(result["severity"]),
         people_affected=_normalize_people_affected(result.get("people_affected")),
+        people_trapped_count=_normalize_people_affected(
+            result.get("people_trapped_count")
+        ),
         injuries_reported=_normalize_people_affected(result.get("injuries_reported")),
         hazards=_normalize_str_list(result.get("hazards")),
         people_trapped=result["people_trapped"],
@@ -446,11 +499,41 @@ def _duplicate_roots(reports: list[Report]) -> dict[int, int]:
     return roots
 
 
+def _repeat_reporter_counts(reports: list[Report]) -> dict[int, int]:
+    window = timedelta(hours=ai_config.REPEAT_REPORTER_WINDOW_HOURS)
+    prior_reports: dict[str, deque[datetime]] = defaultdict(deque)
+    repeat_counts: dict[int, int] = {}
+    ordered = sorted(
+        reports,
+        key=lambda item: (_report_received_utc(item), item.id),
+    )
+    for report in ordered:
+        if not report.reporter_hash:
+            repeat_counts[report.id] = 0
+            continue
+        received_at = _report_received_utc(report)
+        matching_reports = prior_reports[report.reporter_hash]
+        cutoff = received_at - window
+        while matching_reports and matching_reports[0] < cutoff:
+            matching_reports.popleft()
+        repeat_counts[report.id] = len(matching_reports)
+        matching_reports.append(received_at)
+    return repeat_counts
+
+
+def _report_received_utc(report: Report) -> datetime:
+    if report.received_at.tzinfo is None:
+        return report.received_at.replace(tzinfo=timezone.utc)
+    return report.received_at.astimezone(timezone.utc)
+
+
 def report_to_dict(
     report: Report,
     *,
     duplicate: bool | None = None,
     supporting_reports: int = 1,
+    incident_group_id: int | None = None,
+    repeat_report_count: int = 0,
 ):
     received_at = report.received_at
     if received_at.tzinfo is None:
@@ -476,6 +559,7 @@ def report_to_dict(
         "confidence": report.confidence,
         "urgency_score": report.urgency_score,
         "people_affected": report.people_affected,
+        "people_trapped_count": report.people_trapped_count,
         "vulnerable_groups": report.vulnerable_groups or [],
         "needs": report.needs or [],
         "flags": report.flags or [],
@@ -487,6 +571,12 @@ def report_to_dict(
         "duplicate_similarity": report.duplicate_similarity,
         "duplicate_reason": report.duplicate_reason,
         "supporting_reports": supporting_reports,
+        "incident_group_id": incident_group_id or report.id,
+        "reporter_repeat_count": repeat_report_count,
+        "repeat_reporter": repeat_report_count > 0,
+        "legitimacy_label": report.legitimacy_label or "unassessed",
+        "legitimacy_confidence": report.legitimacy_confidence,
+        "legitimacy_reason": report.legitimacy_reason,
         "status": report.status,
         "status_updated_at": (
             report.status_updated_at.isoformat()
@@ -494,10 +584,34 @@ def report_to_dict(
             else None
         ),
         "status_updated_by": report.status_updated_by,
+        "operation_status": report.operation_status or "reported",
+        "assigned_team": report.assigned_team,
+        "dispatched_at": (
+            report.dispatched_at.isoformat()
+            if report.dispatched_at is not None
+            else None
+        ),
+        "last_updated": (
+            report.last_updated.isoformat()
+            if report.last_updated is not None
+            else None
+        ),
+        "rescue_outcome": report.rescue_outcome,
+        "people_rescued": report.people_rescued,
         "received_at": received_at.isoformat(),
         "has_image": report.image_data is not None,
         "image_url": f"/reports/{report.id}/image" if report.image_data else None,
     }
+
+
+def _utc_iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    else:
+        value = value.astimezone(timezone.utc)
+    return value.isoformat()
 
 
 @app.get("/")
@@ -520,13 +634,29 @@ def _save_report(
     image_mime_type: str | None = None,
 ):
     existing_reports = db.query(Report).order_by(Report.id.asc()).all()
+    now = datetime.now(timezone.utc)
+    reporter_hash = (
+        hashlib.sha256(report.reporter_id.strip().encode("utf-8")).hexdigest()
+        if report.reporter_id and report.reporter_id.strip()
+        else None
+    )
+    repeat_window = timedelta(hours=ai_config.REPEAT_REPORTER_WINDOW_HOURS)
+    repeat_report_count = sum(
+        1
+        for previous in existing_reports
+        if reporter_hash
+        and previous.reporter_hash == reporter_hash
+        and now >= _report_received_utc(previous)
+        and now - _report_received_utc(previous) <= repeat_window
+    )
     db_report = Report(
         description=report.description,
         latitude=report.latitude,
         longitude=report.longitude,
+        reporter_hash=reporter_hash,
         analysis_status="pending",
         status="new",
-        status_updated_at=datetime.now(timezone.utc),
+        status_updated_at=now,
         status_updated_by="system",
         image_data=image_data,
         image_mime_type=image_mime_type,
@@ -537,39 +667,107 @@ def _save_report(
     db.refresh(db_report)
     report_id = db_report.id
     matched_duplicate = None
+    duplicate_count = 1
+    grouping_completed = False
 
     try:
+        match = None
+        if not ai_config.STUB_MODE:
+            try:
+                grouping_analysis = group_report(db_report.description)
+                match = find_duplicate(
+                    grouping_analysis,
+                    _incident_refs(existing_reports),
+                    latitude=db_report.latitude,
+                    longitude=db_report.longitude,
+                    now=now,
+                )
+                grouping_completed = True
+            except Exception:
+                logger.exception(
+                    "Pre-analysis grouping failed for report %s; "
+                    "will retry grouping after triage.",
+                    report_id,
+                )
+
+        if match is not None and match.is_duplicate and match.incident_id is not None:
+            matched_duplicate = match
+            duplicate_target = int(match.incident_id)
+            roots = _duplicate_roots(existing_reports)
+            db_report.duplicate_of = roots.get(duplicate_target, duplicate_target)
+            duplicate_source = next(
+                (
+                    item for item in existing_reports
+                    if item.id == db_report.duplicate_of
+                ),
+                None,
+            )
+            if duplicate_source is not None:
+                db_report.operation_status = (
+                    duplicate_source.operation_status or "reported"
+                )
+                db_report.assigned_team = duplicate_source.assigned_team
+                db_report.dispatched_at = duplicate_source.dispatched_at
+                db_report.last_updated = duplicate_source.last_updated
+                db_report.rescue_outcome = duplicate_source.rescue_outcome
+                db_report.people_rescued = duplicate_source.people_rescued
+            duplicate_count += sum(
+                root == db_report.duplicate_of for root in roots.values()
+            )
+
+        if grouping_completed and matched_duplicate is not None:
+            db_report.duplicate_similarity = matched_duplicate.similarity
+            db_report.duplicate_reason = matched_duplicate.reason
+            db.commit()
+            db.refresh(db_report)
+
         raw_result = analyze_report(db_report.description, image=image_data)
         result = _normalize_ai_result(
             raw_result,
             original_text=db_report.description,
         )
         analysis = _analysis_from_result(result)
-        duplicate_count = 1
-        try:
-            match = find_duplicate(
-                analysis,
-                _incident_refs(existing_reports),
-                latitude=db_report.latitude,
-                longitude=db_report.longitude,
-                now=datetime.now(timezone.utc),
-            )
-            if match.is_duplicate and match.incident_id is not None:
-                matched_duplicate = match
-                duplicate_target = int(match.incident_id)
-                roots = _duplicate_roots(existing_reports)
-                db_report.duplicate_of = roots.get(
-                    duplicate_target, duplicate_target
+        if not grouping_completed:
+            try:
+                match = find_duplicate(
+                    analysis,
+                    _incident_refs(existing_reports),
+                    latitude=db_report.latitude,
+                    longitude=db_report.longitude,
+                    now=now,
                 )
-                duplicate_count += sum(
-                    root == db_report.duplicate_of
-                    for root in roots.values()
+                if match.is_duplicate and match.incident_id is not None:
+                    matched_duplicate = match
+                    duplicate_target = int(match.incident_id)
+                    roots = _duplicate_roots(existing_reports)
+                    db_report.duplicate_of = roots.get(
+                        duplicate_target, duplicate_target
+                    )
+                    duplicate_source = next(
+                        (
+                            item for item in existing_reports
+                            if item.id == db_report.duplicate_of
+                        ),
+                        None,
+                    )
+                    if duplicate_source is not None:
+                        db_report.operation_status = (
+                            duplicate_source.operation_status or "reported"
+                        )
+                        db_report.assigned_team = duplicate_source.assigned_team
+                        db_report.dispatched_at = duplicate_source.dispatched_at
+                        db_report.last_updated = duplicate_source.last_updated
+                        db_report.rescue_outcome = duplicate_source.rescue_outcome
+                        db_report.people_rescued = duplicate_source.people_rescued
+                    duplicate_count += sum(
+                        root == db_report.duplicate_of for root in roots.values()
+                    )
+            except Exception:
+                logger.exception(
+                    "Post-analysis grouping failed for report %s; "
+                    "saving it as a new incident.",
+                    report_id,
                 )
-        except Exception:
-            logger.exception(
-                "Duplicate matching failed for report %s; saving it as a new incident.",
-                report_id,
-            )
         result["urgency_score"] = score_urgency(analysis, duplicate_count)
         if db_report.duplicate_of is not None:
             result["priority_reason"] = (
@@ -601,6 +799,7 @@ def _save_report(
             else score_urgency(analysis, duplicate_count)
         )
         db_report.people_affected = result.get("people_affected")
+        db_report.people_trapped_count = result.get("people_trapped_count")
         db_report.injuries_reported = result.get("injuries_reported")
         db_report.hazards = result.get("hazards", [])
         db_report.vulnerable_groups = result.get("vulnerable_groups", [])
@@ -610,6 +809,36 @@ def _save_report(
         if matched_duplicate is not None:
             db_report.duplicate_similarity = matched_duplicate.similarity
             db_report.duplicate_reason = matched_duplicate.reason
+
+        if ai_config.STUB_MODE:
+            db_report.legitimacy_label = "unassessed"
+            db_report.legitimacy_confidence = None
+            db_report.legitimacy_reason = (
+                "Automated credibility assessment is disabled in stub mode."
+            )
+        else:
+            try:
+                legitimacy = assess_legitimacy(db_report.description)
+                db_report.legitimacy_label = (
+                    legitimacy.label
+                    if legitimacy.confidence
+                    >= ai_config.LEGIT_CONFIDENCE_THRESHOLD
+                    else "uncertain"
+                )
+                db_report.legitimacy_confidence = legitimacy.confidence
+                db_report.legitimacy_reason = legitimacy.reason
+            except Exception:
+                logger.exception(
+                    "Legitimacy assessment failed for report %s; "
+                    "human verification is required.",
+                    report_id,
+                )
+                db_report.legitimacy_label = "unassessed"
+                db_report.legitimacy_confidence = None
+                db_report.legitimacy_reason = (
+                    "Automated credibility assessment unavailable; "
+                    "human verification is required."
+                )
 
         db.commit()
         db.refresh(db_report)
@@ -633,12 +862,15 @@ def _save_report(
     supporting_reports = sum(
         root == report_root for root in roots.values()
     )
+    repeat_counts = _repeat_reporter_counts(saved_reports)
     return {
         "message": "Disaster report saved",
         "report": report_to_dict(
             db_report,
             duplicate=report_root != db_report.id,
             supporting_reports=supporting_reports,
+            incident_group_id=report_root,
+            repeat_report_count=repeat_counts.get(db_report.id, repeat_report_count),
         ),
     }
 
@@ -690,6 +922,7 @@ def create_report_with_image(
     description: str = Form(..., min_length=5, max_length=5000),
     latitude: float = Form(..., ge=-90, le=90),
     longitude: float = Form(..., ge=-180, le=180),
+    reporter_id: str | None = Form(default=None, min_length=8, max_length=128),
     image: UploadFile | None = File(default=None),
     db: Session = Depends(get_db),
 ):
@@ -698,6 +931,7 @@ def create_report_with_image(
         description=description,
         latitude=latitude,
         longitude=longitude,
+        reporter_id=reporter_id,
     )
     return _save_report(report, db, image_data, image_mime_type)
 
@@ -718,6 +952,7 @@ def get_report_image(report_id: int, db: Session = Depends(get_db)):
 def get_reports(db: Session = Depends(get_db)):
     reports = db.query(Report).order_by(Report.id.desc()).all()
     roots = _duplicate_roots(reports)
+    repeat_counts = _repeat_reporter_counts(reports)
     group_sizes: dict[int, int] = {}
     for root in roots.values():
         group_sizes[root] = group_sizes.get(root, 0) + 1
@@ -728,6 +963,8 @@ def get_reports(db: Session = Depends(get_db)):
             supporting_reports=group_sizes.get(
                 roots.get(report.id, report.id), 1
             ),
+            incident_group_id=roots.get(report.id, report.id),
+            repeat_report_count=repeat_counts.get(report.id, 0),
         )
         for report in reports
     ]
@@ -760,6 +997,58 @@ def _situation_data(reports: list[Report]) -> dict[str, object]:
     status_counts: dict[str, int] = {}
     for report in primary:
         status_counts[report.status] = status_counts.get(report.status, 0) + 1
+    deployed = [
+        report for report in primary
+        if (report.operation_status or "reported") in {"dispatched", "rescue_active"}
+        and report.assigned_team
+    ]
+    trapped_groups = [
+        group for group in grouped.values()
+        if any(report.people_trapped == "yes" for report in group)
+    ]
+    trapped_counts = [
+        max(
+            (
+                report.people_trapped_count
+                for report in group
+                if report.people_trapped == "yes"
+                and report.people_trapped_count is not None
+            ),
+            default=None,
+        )
+        for group in trapped_groups
+    ]
+    confirmed_rescues = [
+        report for report in primary
+        if report.rescue_outcome == "rescued" and report.people_rescued
+    ]
+    rescue_operations = {
+        "active_operations": sum(
+            (report.operation_status or "reported")
+            in {"dispatched", "rescue_active"}
+            for report in primary
+        ),
+        "teams_dispatched": len({
+            report.assigned_team.strip().casefold()
+            for report in deployed
+            if report.assigned_team and report.assigned_team.strip()
+        }),
+        "people_reported_trapped": sum(
+            max(0, count or 0) for count in trapped_counts
+        ),
+        "trapped_incidents": len(trapped_groups),
+        "trapped_count_unknown": sum(
+            count is None for count in trapped_counts
+        ),
+        "people_rescued_confirmed": sum(
+            report.people_rescued or 0 for report in confirmed_rescues
+        ),
+        "confirmed_rescue_incidents": len(confirmed_rescues),
+        "awaiting_verification": sum(
+            (report.operation_status or "reported") == "reported"
+            for report in primary
+        ),
+    }
 
     remaining = [report for report in primary if report.latitude is not None and report.longitude is not None]
     hotspots: list[dict[str, object]] = []
@@ -799,6 +1088,7 @@ def _situation_data(reports: list[Report]) -> dict[str, object]:
         "open_incidents": sum(report.status != "resolved" for report in primary),
         "type_counts": dict(sorted(type_counts.items(), key=lambda item: (-item[1], item[0]))),
         "status_counts": status_counts,
+        "rescue_operations": rescue_operations,
         "hotspots": hotspots,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -885,6 +1175,210 @@ _STATUS_TRANSITIONS = {
     "response_in_progress": "resolved",
 }
 
+_OPERATION_TRANSITIONS = {
+    "reported": {"verified", "false_alarm", "no_rescue_required"},
+    "verified": {
+        "dispatched",
+        "false_alarm",
+        "no_rescue_required",
+        "unable_to_access",
+    },
+    "dispatched": {
+        "rescue_active",
+        "false_alarm",
+        "no_rescue_required",
+        "unable_to_access",
+    },
+    "rescue_active": {"completed", "unable_to_access"},
+}
+_OPERATION_OUTCOMES = {
+    "completed": "rescued",
+    "false_alarm": "false_alarm",
+    "no_rescue_required": "no_rescue_required",
+    "unable_to_access": "unable_to_access",
+}
+
+
+def _incident_operation_group(
+    reports: list[Report], incident_id: int
+) -> tuple[Report, list[Report]]:
+    report = next((item for item in reports if item.id == incident_id), None)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    roots = _duplicate_roots(reports)
+    root_id = roots.get(report.id, report.id)
+    root = next((item for item in reports if item.id == root_id), report)
+    members = [
+        item for item in reports
+        if roots.get(item.id, item.id) == root_id
+    ]
+    states = {item.operation_status or "reported" for item in members}
+    if len(states) != 1:
+        raise HTTPException(
+            status_code=409,
+            detail="Duplicate incident reports have inconsistent rescue-operation states.",
+        )
+    return root, members
+
+
+def _operation_detail(
+    report: Report,
+    members: list[Report],
+    events: list[RescueOperationEvent],
+) -> dict[str, object]:
+    return {
+        "incident_id": report.id,
+        "operation_status": report.operation_status or "reported",
+        "assigned_team": report.assigned_team,
+        "dispatched_at": _utc_iso(report.dispatched_at),
+        "last_updated": _utc_iso(report.last_updated or report.received_at),
+        "rescue_outcome": report.rescue_outcome,
+        "people_rescued": report.people_rescued,
+        "received_at": _utc_iso(report.received_at),
+        "incident_type": report.incident_type,
+        "severity": report.severity,
+        "analysis_status": report.analysis_status,
+        "legitimacy_label": report.legitimacy_label or "unassessed",
+        "legitimacy_confidence": report.legitimacy_confidence,
+        "legitimacy_reason": report.legitimacy_reason,
+        "people_trapped": report.people_trapped,
+        "people_affected": report.people_affected,
+        "people_trapped_count": report.people_trapped_count,
+        "hazards": report.hazards or [],
+        "location_text": report.location_text,
+        "description": report.description,
+        "supporting_reports": len(members),
+        "history": [
+            {
+                "previous_status": event.previous_status,
+                "status": event.new_status,
+                "assigned_team": event.assigned_team,
+                "rescue_outcome": event.rescue_outcome,
+                "people_rescued": event.people_rescued,
+                "changed_by": event.changed_by,
+                "changed_at": _utc_iso(event.changed_at),
+            }
+            for event in events
+        ],
+    }
+
+
+@app.get("/incidents/{incident_id}/operation")
+def get_incident_operation(
+    incident_id: int,
+    db: Session = Depends(get_db),
+):
+    reports = db.query(Report).order_by(Report.id.asc()).all()
+    report, members = _incident_operation_group(reports, incident_id)
+    events = (
+        db.query(RescueOperationEvent)
+        .filter(RescueOperationEvent.report_id == report.id)
+        .order_by(
+            RescueOperationEvent.changed_at.asc(),
+            RescueOperationEvent.id.asc(),
+        )
+        .all()
+    )
+    return _operation_detail(report, members, events)
+
+
+@app.patch("/incidents/{incident_id}/operation")
+def update_incident_operation(
+    incident_id: int,
+    update: RescueOperationUpdate,
+    db: Session = Depends(get_db),
+):
+    reports = db.query(Report).order_by(Report.id.asc()).all()
+    report, members = _incident_operation_group(reports, incident_id)
+    current_status = report.operation_status or "reported"
+    if current_status in _OPERATION_OUTCOMES:
+        raise HTTPException(
+            status_code=409,
+            detail="This rescue operation has a terminal outcome and cannot be changed.",
+        )
+
+    fields_set = update.model_fields_set
+    next_status = update.operation_status or current_status
+    if next_status != current_status and next_status not in _OPERATION_TRANSITIONS.get(
+        current_status, set()
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Cannot move rescue operation from '{current_status}' "
+                f"to '{next_status}'."
+            ),
+        )
+
+    assigned_team = (
+        update.assigned_team.strip() or None
+        if "assigned_team" in fields_set and update.assigned_team is not None
+        else None
+        if "assigned_team" in fields_set
+        else report.assigned_team
+    )
+    team_changed = assigned_team != report.assigned_team
+    if next_status in {"dispatched", "rescue_active"} and not assigned_team:
+        raise HTTPException(
+            status_code=422,
+            detail="Assign a response team before dispatching or activating a rescue.",
+        )
+    if next_status == "completed":
+        if "people_rescued" not in fields_set or update.people_rescued is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Record the confirmed number of people rescued before completing.",
+            )
+    elif "people_rescued" in fields_set:
+        raise HTTPException(
+            status_code=422,
+            detail="A rescued-person count can only be recorded when completing a rescue.",
+        )
+
+    if next_status == current_status and not team_changed:
+        raise HTTPException(
+            status_code=400,
+            detail="No rescue-operation changes were provided.",
+        )
+
+    now = datetime.now(timezone.utc)
+    outcome = _OPERATION_OUTCOMES.get(next_status)
+    rescued_count = update.people_rescued if next_status == "completed" else None
+    changed_by = update.changed_by.strip() or "local responder"
+    for member in members:
+        member.operation_status = next_status
+        member.assigned_team = assigned_team
+        if next_status == "dispatched" and member.dispatched_at is None:
+            member.dispatched_at = now
+        member.last_updated = now
+        member.rescue_outcome = outcome
+        member.people_rescued = rescued_count
+
+    db.add(
+        RescueOperationEvent(
+            report_id=report.id,
+            previous_status=current_status,
+            new_status=next_status,
+            assigned_team=assigned_team,
+            rescue_outcome=outcome,
+            people_rescued=rescued_count,
+            changed_by=changed_by,
+            changed_at=now,
+        )
+    )
+    db.commit()
+    db.refresh(report)
+    events = (
+        db.query(RescueOperationEvent)
+        .filter(RescueOperationEvent.report_id == report.id)
+        .order_by(
+            RescueOperationEvent.changed_at.asc(),
+            RescueOperationEvent.id.asc(),
+        )
+        .all()
+    )
+    return _operation_detail(report, members, events)
+
 
 @app.patch("/reports/{report_id}/status")
 def update_report_status(
@@ -969,6 +1463,7 @@ def get_incidents(db: Session = Depends(get_db)):
     )
 
     roots = _duplicate_roots(reports)
+    repeat_counts = _repeat_reporter_counts(reports)
     group_sizes: dict[int, int] = {}
     for root in roots.values():
         group_sizes[root] = group_sizes.get(root, 0) + 1
@@ -986,10 +1481,14 @@ def get_incidents(db: Session = Depends(get_db)):
             "road_blocked": report.road_blocked,
             "priority_reason": report.priority_reason,
             "analysis_status": report.analysis_status,
+            "legitimacy_label": report.legitimacy_label or "unassessed",
+            "legitimacy_confidence": report.legitimacy_confidence,
+            "legitimacy_reason": report.legitimacy_reason,
             "location_text": report.location_text,
             "confidence": report.confidence,
             "urgency_score": report.urgency_score,
             "people_affected": report.people_affected,
+            "people_trapped_count": report.people_trapped_count,
             "vulnerable_groups": report.vulnerable_groups or [],
             "needs": report.needs or [],
             "flags": report.flags or [],
@@ -1000,6 +1499,9 @@ def get_incidents(db: Session = Depends(get_db)):
             "duplicate_of": report.duplicate_of,
             "duplicate_similarity": report.duplicate_similarity,
             "duplicate_reason": report.duplicate_reason,
+            "incident_group_id": roots.get(report.id, report.id),
+            "reporter_repeat_count": repeat_counts.get(report.id, 0),
+            "repeat_reporter": repeat_counts.get(report.id, 0) > 0,
             "has_image": report.image_data is not None,
             "image_url": f"/reports/{report.id}/image" if report.image_data else None,
             "status": report.status,
@@ -1009,6 +1511,12 @@ def get_incidents(db: Session = Depends(get_db)):
                 else None
             ),
             "status_updated_by": report.status_updated_by,
+            "operation_status": report.operation_status or "reported",
+            "assigned_team": report.assigned_team,
+            "dispatched_at": _utc_iso(report.dispatched_at),
+            "last_updated": _utc_iso(report.last_updated),
+            "rescue_outcome": report.rescue_outcome,
+            "people_rescued": report.people_rescued,
             "received_at": report_to_dict(report)["received_at"],
             "supporting_reports": group_sizes.get(
                 roots.get(report.id, report.id), 1

@@ -8,8 +8,13 @@ _client = None
 def _get_client() -> OpenAI:
     global _client
     if _client is None:
-        if not config.LLM_API_KEY or not config.LLM_MODEL:
-            raise RuntimeError("Set LLM_API_KEY and LLM_MODEL in ai/.env (or DISASTERLENS_STUB=1).")
+        if not config.LLM_API_KEY or not any(
+            (config.LLM_MODEL, config.GROUPING_MODEL, config.LEGIT_MODEL)
+        ):
+            raise RuntimeError(
+                "Set LLM_API_KEY and at least one model name in ai/.env "
+                "(or DISASTERLENS_STUB=1)."
+            )
         _client = OpenAI(base_url=config.LLM_BASE_URL, api_key=config.LLM_API_KEY,
                          timeout=config.REQUEST_TIMEOUT, max_retries=0)
     return _client
@@ -26,7 +31,7 @@ def _detect_mime(image: bytes) -> str:
 
 def chat(system: str, user_text: str, image: bytes | None = None,
          history: list[dict] | None = None, timeout: float | None = None,
-         json_mode: bool = True) -> str:
+         json_mode: bool = True, model: str | None = None) -> str:
     """One model call. Returns raw text. `history` = few-shot message pairs.
     `timeout` overrides the client-wide timeout for this call.
     `json_mode` asks the provider for a JSON object body (only valid when the
@@ -38,7 +43,7 @@ def chat(system: str, user_text: str, image: bytes | None = None,
                         "image_url": {"url": f"data:{_detect_mime(image)};base64,{b64}"}})
     messages = [{"role": "system", "content": system}, *(history or []),
                 {"role": "user", "content": content if image else user_text}]
-    kwargs: dict = dict(model=config.LLM_MODEL, messages=messages, temperature=0.1,
+    kwargs: dict = dict(model=model or config.LLM_MODEL, messages=messages, temperature=0.1,
                         max_tokens=config.MAX_TOKENS,
                         timeout=timeout or config.REQUEST_TIMEOUT)
     if json_mode:
