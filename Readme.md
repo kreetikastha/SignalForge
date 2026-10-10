@@ -46,3 +46,9 @@ database instead of their own computer's `127.0.0.1`.
 analysis is marked as mock and must be verified manually. To enable live
 analysis, set the provider variables described in `ai/.env.example` in the
 Render service environment and set `DISASTERLENS_STUB=0`.
+
+### Going live checklist
+
+- [ ] In Render dashboard, set secrets: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` (sync: false)
+- [ ] Confirm `/health` returns `{"status": "healthy"}`
+- [ ] Submit a test report; verify `analysis_status` is `"completed"` (not `"mock"`)
