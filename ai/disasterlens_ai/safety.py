@@ -8,6 +8,10 @@ NEGATION_PHRASES = (
     "nobody is trapped",
     "no one trapped",
     "nobody trapped",
+    "no one was trapped",
+    "nobody was trapped",
+    "none trapped",
+    "no people trapped",
     "not trapped",
     "no casualties",
     # Romanized Nepali
@@ -24,12 +28,19 @@ NEGATION_PHRASES = (
 TRAPPED_TERMS = (
     # English
     "trapped",
-    "stuck",
+    # Bare "stuck" is deliberately NOT a term: "bus stuck in mud", "cars stuck
+    # in traffic" describe vehicles, not trapped people. Only these specific
+    # senses of "stuck" denote someone who cannot get out.
+    "stuck inside",
+    "stuck under",
+    "stuck in the rubble",
+    "stuck in the house",
+    "stuck in the building",
+    "stuck in the debris",
     "buried",
     "under rubble",
     "under the rubble",
     "under the debris",
-    "stuck inside",
     "cannot escape",
     "can't escape",
     # Romanized Nepali: फसेका/पुरिएका/च्यापिएका/अड्किएका and common spellings
@@ -58,8 +69,9 @@ TRAPPED_TERMS = (
     "अड्किएका",
 )
 
-# Word-boundary matching so short romanized stems ("fase", "puriye", "stuck")
-# never match as substrings of unrelated words ("unstuck", "unburied").
+# Word-boundary matching so short stems ("fase", "puriye") and short English
+# terms ("buried", "trapped") never match as substrings of unrelated words
+# ("unburied", "untrapped").
 # Plain \b is unusable: Devanagari terms end in a combining matra (category Mn),
 # which is not a \w char, so the trailing \b would fail before a space. Looking
 # for "no word char on either side" keeps the English-substring protection and
@@ -69,14 +81,40 @@ _TRAPPED_RE = re.compile("|".join(
     r"(?<!\w)%s(?!\w)" % re.escape(term)
     for term in sorted(TRAPPED_TERMS, key=len, reverse=True)))
 
+# Clause delimiters for the negation guard. । (U+0964 DEVANAGARI DANDA) is the
+# Devanagari full stop, so Devanagari sentences split the same way English ones
+# do. A run of delimiters ("...!", "a; b") collapses into a single cut.
+_CLAUSE_RE = re.compile(r"[.!?।\n;,]+")
+
 
 def _add_flag(flags: list[str], flag: str) -> None:
     if flag not in flags:
         flags.append(flag)
 
 
+def _clauses(text_lower: str) -> list[str]:
+    return [clause for clause in _CLAUSE_RE.split(text_lower) if clause.strip()]
+
+
+def _negated(clause: str) -> bool:
+    return any(phrase in clause for phrase in NEGATION_PHRASES)
+
+
+def _reports_trapped(text_lower: str) -> bool:
+    """True when some clause names a trapped term that its own negation allows.
+
+    Negation is clause-local: "...but nobody was trapped" cancels the trapped
+    terms of that clause only, so it can no longer silence a trapped report in
+    a different clause of the same message.
+    """
+    return any(
+        not _negated(clause) and _TRAPPED_RE.search(clause)
+        for clause in _clauses(text_lower)
+    )
+
+
 def apply_safety_net(text: str, a: ReportAnalysis) -> ReportAnalysis:
-    out = a.copy(deep=True)
+    out = a.model_copy(deep=True)
     if out.flags is None:
         out.flags = []
     else:
@@ -84,20 +122,18 @@ def apply_safety_net(text: str, a: ReportAnalysis) -> ReportAnalysis:
 
     text_lower = text.lower()
 
-    # Rule a: Negation guard
-    negation = any(phrase in text_lower for phrase in NEGATION_PHRASES)
+    # Rule b: Trapped terms, evaluated per clause (see _reports_trapped).
+    if _reports_trapped(text_lower):
+        if out.people_trapped != "yes":
+            out.people_trapped = "yes"
+            _add_flag(out.flags, "trapped_keyword_override")
 
-    if not negation:
-        # Rule b: Trapped terms (word-boundary match on the lowered text)
-        if _TRAPPED_RE.search(text_lower):
-            if out.people_trapped != "yes":
-                out.people_trapped = "yes"
-                _add_flag(out.flags, "trapped_keyword_override")
-
-        # Rule c: Severity floor for trapped
-        if out.people_trapped == "yes" and out.severity < 4:
-            out.severity = 4
-            _add_flag(out.flags, "severity_floor_trapped")
+    # Rule c: Severity floor for trapped. Keyed off the final value rather than
+    # off the text, so a negated clause elsewhere can neither cancel the floor
+    # for a trapped person reported in another clause nor create one.
+    if out.people_trapped == "yes" and out.severity < 4:
+        out.severity = 4
+        _add_flag(out.flags, "severity_floor_trapped")
 
     # Rule d: Low confidence
     if out.confidence < 0.5:
