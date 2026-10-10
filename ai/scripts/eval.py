@@ -97,12 +97,25 @@ def _summary(results: dict) -> dict:
 
 
 def _duplicates(samples: list[dict], expected: dict, analyses: dict) -> dict:
+    """Pairwise duplicate precision/recall, scored two ways.
+
+    * with coordinates (headline): what the backend does. The NEW report's
+      lat/lon go in the keyword arguments; the existing incident's lat/lon ride
+      on its IncidentRef, so find_duplicate measures a real distance.
+    * without coordinates: text/location overlap only.
+    """
     ids = [s["id"] for s in samples]
-    refs = {sid: IncidentRef(id=sid, incident_type=analyses[sid].incident_type,
-                             location_text=analyses[sid].location_text,
-                             summary=analyses[sid].summary,
-                             latitude=samples[sid].get("lat"),
-                             longitude=samples[sid].get("lon")) for sid in ids}
+    coords = {s["id"]: (s.get("lat"), s.get("lon")) for s in samples}
+
+    def ref(sid: str, with_coords: bool) -> IncidentRef:
+        lat, lon = coords[sid] if with_coords else (None, None)
+        return IncidentRef(id=sid, incident_type=analyses[sid].incident_type,
+                           location_text=analyses[sid].location_text,
+                           summary=analyses[sid].summary,
+                           latitude=lat, longitude=lon)
+
+    refs = {True: {sid: ref(sid, True) for sid in ids},
+            False: {sid: ref(sid, False) for sid in ids}}
     grouped = {sid for sid in ids if expected[sid]["dup_group"]}
     truth, evaluated = set(), set()
     for a in ids:
@@ -113,31 +126,31 @@ def _duplicates(samples: list[dict], expected: dict, analyses: dict) -> dict:
                 truth.add((a, b))          # both directions of each in-group pair
             if a in grouped or b in grouped:
                 evaluated.add((a, b))
-    # With coordinates
-    predicted_with = {p for p in evaluated
-                     if find_duplicate(analyses[p[0]], [refs[p[1]]],
-                                       latitude=refs[p[1]].latitude,
-                                       longitude=refs[p[1]].longitude).is_duplicate}
-    tp_with = predicted_with & truth
-    precision_with = (_rate(len(tp_with), len(predicted_with)), len(tp_with), len(predicted_with))
-    recall_with = (_rate(len(tp_with), len(truth)), len(tp_with), len(truth))
-    # Without coordinates (pass None)
-    refs_no_coord = {sid: IncidentRef(id=sid, incident_type=analyses[sid].incident_type,
-                                      location_text=analyses[sid].location_text,
-                                      summary=analyses[sid].summary)
-                     for sid in ids}
-    predicted_without = {p for p in evaluated
-                        if find_duplicate(analyses[p[0]], [refs_no_coord[p[1]]]).is_duplicate}
-    tp_without = predicted_without & truth
-    precision_without = (_rate(len(tp_without), len(predicted_without)), len(tp_without), len(predicted_without))
-    recall_without = (_rate(len(tp_without), len(truth)), len(tp_without), len(truth))
-    return {"precision_with_coords": precision_with,
-            "recall_with_coords": recall_with,
-            "precision_without_coords": precision_without,
-            "recall_without_coords": recall_without,
-            "missed": sorted(truth - predicted_with),
-            "false_positives_with_coords": sorted(predicted_with - truth),
-            "false_positives_without_coords": sorted(predicted_without - truth)}
+
+    def predict(with_coords: bool) -> set:
+        out = set()
+        for a, b in evaluated:
+            kwargs = {}
+            if with_coords:  # `a` is the new report, `b` the existing incident
+                kwargs = {"latitude": coords[a][0], "longitude": coords[a][1]}
+            if find_duplicate(analyses[a], [refs[with_coords][b]], **kwargs).is_duplicate:
+                out.add((a, b))
+        return out
+
+    def score(predicted: set) -> tuple:
+        tp = predicted & truth
+        return ((_rate(len(tp), len(predicted)), len(tp), len(predicted)),
+                (_rate(len(tp), len(truth)), len(tp), len(truth)))
+
+    with_c, without_c = predict(True), predict(False)
+    prec_c, rec_c = score(with_c)
+    prec_n, rec_n = score(without_c)
+    return {"precision": prec_c, "recall": rec_c,
+            "precision_no_coords": prec_n, "recall_no_coords": rec_n,
+            "missed": sorted(truth - with_c),
+            "false_positives": sorted(with_c - truth),
+            "missed_no_coords": sorted(truth - without_c),
+            "false_positives_no_coords": sorted(without_c - truth)}
 
 
 def _safety(results: dict) -> dict:
@@ -214,9 +227,12 @@ def main() -> int:
     print("-" * 52)
     for name, (part, whole) in metrics.items():
         print(f"{name:<28} {_fmt(_rate(part, whole)):>7}  {part}/{whole}")
-    for name in ("precision", "recall"):
-        rate, part, whole = dup[name]
-        print(f"{'duplicate ' + name:<28} {_fmt(rate):>7}  {part}/{whole}")
+    for label, key in (("duplicate precision", "precision"),
+                       ("duplicate recall", "recall"),
+                       ("  precision (no coords)", "precision_no_coords"),
+                       ("  recall (no coords)", "recall_no_coords")):
+        rate, part, whole = dup[key]
+        print(f"{label:<28} {_fmt(rate):>7}  {part}/{whole}")
 
     print("\nsafety metrics:")
     print(f"{'trapped recall':<28} {_fmt(trapped_recall):>7}  "
@@ -230,10 +246,12 @@ def main() -> int:
     print(f"\nfailures ({len(failures)}):")
     for line in failures:
         print(line)
-    if dup["missed"]:
-        print(f"  [duplicate missed] {dup['missed']}")
-    if dup["false_positives"]:
-        print(f"  [duplicate false positive] {dup['false_positives']}")
+    for key, label in (("missed", "duplicate missed"),
+                       ("false_positives", "duplicate false positive"),
+                       ("missed_no_coords", "duplicate missed (no coords)"),
+                       ("false_positives_no_coords", "duplicate false positive (no coords)")):
+        if dup[key]:
+            print(f"  [{label}] {dup[key]}")
 
     if args.out:
         Path(args.out).write_text(json.dumps(
@@ -241,7 +259,11 @@ def main() -> int:
              "metrics": {k: {"correct": a, "total": b, "rate": _rate(a, b)}
                          for k, (a, b) in metrics.items()},
              "duplicate": {"precision": dup["precision"][0], "recall": dup["recall"][0],
-                           "missed": dup["missed"], "false_positives": dup["false_positives"]},
+                           "precision_no_coords": dup["precision_no_coords"][0],
+                           "recall_no_coords": dup["recall_no_coords"][0],
+                           "missed": dup["missed"], "false_positives": dup["false_positives"],
+                           "missed_no_coords": dup["missed_no_coords"],
+                           "false_positives_no_coords": dup["false_positives_no_coords"]},
              "safety": {
                  "trapped_recall": {"correct": len(safety["trapped_caught"]),
                                     "total": len(safety["trapped"]),

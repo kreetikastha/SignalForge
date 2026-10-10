@@ -53,5 +53,8 @@ def test_offline_run_is_self_describing(tmp_path, monkeypatch, capsys):
     # pre-existing keys and metric names must survive untouched
     assert set(payload) >= {"metrics", "duplicate", "safety", "failures", "samples"}
     assert list(payload["metrics"]) == METRIC_NAMES
-    assert list(payload["duplicate"]) == ["precision", "recall", "missed", "false_positives"]
+    assert list(payload["duplicate"]) == [
+        "precision", "recall", "precision_no_coords", "recall_no_coords",
+        "missed", "false_positives", "missed_no_coords", "false_positives_no_coords",
+    ]
     assert "WARNING: stub mode" in capsys.readouterr().out

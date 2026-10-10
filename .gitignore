@@ -6,3 +6,5 @@ backend/.venv/
 backend/**pycache**/
 backend/disasterlens.db
 .pytest_cache/
+
+*.egg-info/
