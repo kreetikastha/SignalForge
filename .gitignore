@@ -1,10 +1,8 @@
 ﻿.env
-**pycache**/
+__pycache__/
 .venv/
 *.pyc
-backend/.venv/
-backend/**pycache**/
+*.egg-info/
+ai/build/
 backend/disasterlens.db
 .pytest_cache/
-
-*.egg-info/
