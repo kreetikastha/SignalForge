@@ -120,6 +120,8 @@ def to_backend_dict(
         "urgency_score": score_urgency(analysis, duplicate_count),
         "location_text": analysis.location_text,
         "needs": analysis.needs,
+        "people_affected": analysis.people_affected,
+        "vulnerable_groups": analysis.vulnerable_groups,
         "language": analysis.language,
         "confidence": analysis.confidence,
         "flags": analysis.flags,
