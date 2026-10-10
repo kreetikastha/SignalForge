@@ -76,6 +76,20 @@ analysis is marked as mock and must be verified manually. To enable live
 analysis, set the provider variables described in `ai/.env.example` in the
 Render service environment and set `DISASTERLENS_STUB=0`.
 
+### Demo preflight
+
+Run the staged-pipeline sanity check from `ai/`:
+```sh
+uv run python scripts/check_api.py
+```
+It times `group_report`, `analyze_report`, and `assess_legitimacy` twice (cold + warm).
+- **PASS** — every stage succeeded and warm total <= 20s
+- **WARN** — every stage succeeded but warm total > 20s (investigate latency)
+- **FAIL** — any stage raised an exception
+
+If `DISASTERLENS_STUB=1` is set, the script prints that stub mode is on and exits 0
+without calling any API. Never prints API keys.
+
 ### Going live checklist
 
 - [ ] In Render dashboard, set secrets: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` (sync: false)
