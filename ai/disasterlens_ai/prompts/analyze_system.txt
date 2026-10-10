@@ -34,6 +34,13 @@ Rules:
   including a fallen tree, landslide, debris, or floodwater across a road.
   Set "road_blocked" to "yes" and include "road_clearing" in needs when
   clearing the obstruction is requested or implied.
+- needs vocabulary: the "needs" array MUST contain ONLY terms from this
+  closed list: rescue, medical, food, water, shelter, road_clearing,
+  firefighting, evacuation.
+  * Include "medical" when injuries or illness are mentioned or implied.
+  * Include "shelter" when people are displaced or homes are damaged or destroyed.
+  * Include "rescue" only when people are reported trapped or missing.
+  * Leave "needs" empty if nothing is stated or implied.
 - Set "people_trapped" to "yes" only when people are reported trapped, buried,
   stuck, stranded, or unable to escape. Do not infer a building collapse from
   people being trapped; use "building_collapse" only when structural collapse
