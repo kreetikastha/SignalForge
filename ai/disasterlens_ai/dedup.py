@@ -78,7 +78,7 @@ def _judge(new: ReportAnalysis, inc: IncidentRef,
             "report_b": report_b,
             "distance_km": round(dist_km, 2) if dist_km is not None else None,
         }, ensure_ascii=False)
-        data = _extract_json(chat(_JUDGE_SYSTEM_PROMPT, user))
+        data = _extract_json(chat(_JUDGE_SYSTEM_PROMPT, user, timeout=config.JUDGE_TIMEOUT))
         if not isinstance(data.get("same_incident"), bool):
             return None
         return data["same_incident"], str(data.get("reason", ""))

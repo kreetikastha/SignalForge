@@ -322,5 +322,77 @@
     "text": "नागढुङ्गा नजिकै पहिरो आएर त्रिभुवन राजपथ अवरुद्ध भएको छ। पहिरोले गर्दा बाटो बन्द छ र गाडीहरू रोकिएका छन्।",
     "lat": 27.714,
     "lon": 85.196
+  },
+  {
+    "id": "s55",
+    "text": "Flood alert: Kalimati area, water entering ground-floor shops after heavy rain. Rescue teams deploying sandbags.",
+    "lat": 27.704,
+    "lon": 85.296
+  },
+  {
+    "id": "s56",
+    "text": "बाल्कु खोलमा पानी बढेर पसलका भुइँटालामा घुसेको छ। व्यापारीहरूले पानी निकाल्दै छन्।",
+    "lat": 27.687,
+    "lon": 85.298
+  },
+  {
+    "id": "s57",
+    "text": "Fire at Kalimati market, shop gutted, firefighters on scene. No injuries reported.",
+    "lat": 27.705,
+    "lon": 85.294
+  },
+  {
+    "id": "s58",
+    "text": "कालिमाटी मा आग, एक दुकान जस्तो जले, अग्निशमनकर्मी मौजूद। काही दुर्घटना नाही।",
+    "lat": 27.706,
+    "lon": 85.295
+  },
+  {
+    "id": "s59",
+    "text": "Landslide warning: Pokhara-Lakeside road blocked by debris after overnight storm.",
+    "lat": 28.212,
+    "lon": 83.957
+  },
+  {
+    "id": "s60",
+    "text": "पोखराको लेकसाइड रोड रात्रीको आँधीमा भएर मलू आएको छ। सडक बन्द।",
+    "lat": 28.213,
+    "lon": 83.956
+  },
+  {
+    "id": "s61",
+    "text": "Flood near Balkhu bridge, water level rising, 1km apart from s55 event.",
+    "lat": 27.688,
+    "lon": 85.299
+  },
+  {
+    "id": "s62",
+    "text": "बाल्कु पुलिएरु near flood, water level high but different event. 1km from s55.",
+    "lat": 27.69,
+    "lon": 85.301
+  },
+  {
+    "id": "s63",
+    "text": "Fire at Jorpati, shop fire, different from s57. ~800m away.",
+    "lat": 27.742,
+    "lon": 85.348
+  },
+  {
+    "id": "s64",
+    "text": "जोपाटीमा आग, दुकान जस्तो जले, सिचुएशन भिन्न। 800m वा सँगै ठूलो।",
+    "lat": 27.744,
+    "lon": 85.35
+  },
+  {
+    "id": "s65",
+    "text": "Landslide on Pokhara-Begnas road, debris blocking single lane.",
+    "lat": 28.225,
+    "lon": 83.97
+  },
+  {
+    "id": "s66",
+    "text": "पोखरा-बेग्नास रोडमा भूस्खलन, एक लेन बन्द। अलग घटना, 1.5km वा सँगै ठूलो।",
+    "lat": 28.227,
+    "lon": 83.972
   }
 ]
